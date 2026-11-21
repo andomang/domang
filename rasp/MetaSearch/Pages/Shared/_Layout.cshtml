@@ -1,7 +1,9 @@
 ﻿@inject Lang Lang
 @inject MemberDao MemberDao
 @inject Services.DbService Db
+@using Microsoft.AspNetCore.DataProtection
 @inject IConfiguration Configuration
+@inject Microsoft.AspNetCore.DataProtection.IDataProtectionProvider DataProtection
 @{
     // 쿠키 → 세션 동기화 (다크모드)
     bool isDark = false;
@@ -27,7 +29,10 @@
     string uid = Context.Session.GetString("UserID");
     if (uid == null && Context.Request.Cookies.ContainsKey("UserID"))
     {
-        string cookieUid = Context.Request.Cookies["UserID"]?.Trim().ToLowerInvariant() ?? "";
+        // 서명을 확인해서 아이디를 꺼냄. 위조·예전 형식(서명 없음) 쿠키는 빈 값 → 아래에서 쿠키 삭제
+        string cookieUid = "";
+        try { cookieUid = DataProtection.CreateProtector("AutoLogin").Unprotect(Context.Request.Cookies["UserID"] ?? "").Trim().ToLowerInvariant(); }
+        catch (System.Security.Cryptography.CryptographicException) { }
         // DB에서 활성 유저 존재 여부 확인 (소문자 정규화 + 탈퇴·삭제된 계정 쿠키 방지)
         using (var conn = Db.OpenConnection())
         {

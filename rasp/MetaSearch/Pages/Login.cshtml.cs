@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
@@ -12,8 +13,11 @@ public class LoginModel : PageModel
 {
     private readonly Services.MemberDao _dao;
     private readonly Services.DbService _db;
+    // 자동 로그인 쿠키 서명 (위조 방지). _Layout.cshtml이 같은 이름("AutoLogin")으로 확인
+    private readonly Microsoft.AspNetCore.DataProtection.IDataProtector _autoLogin;
 
-    public LoginModel(Services.MemberDao dao, Services.DbService db) { _dao = dao; _db = db; }
+    public LoginModel(Services.MemberDao dao, Services.DbService db, Microsoft.AspNetCore.DataProtection.IDataProtectionProvider dp)
+    { _dao = dao; _db = db; _autoLogin = dp.CreateProtector("AutoLogin"); }
 
     [BindProperty] public string LoginId { get; set; } = "";
     [BindProperty] public string LoginPw { get; set; } = "";
@@ -86,7 +90,8 @@ public class LoginModel : PageModel
             Secure = true,              // HTTPS에서만 전송
             SameSite = SameSiteMode.Lax // CSRF 방지
         };
-        Response.Cookies.Append("UserID", LoginId, cookieOpt);
+        // 아이디를 그대로 넣지 않고 서명해서 저장 (예전엔 쿠키 값만 바꾸면 다른 계정·관리자로 로그인됐음)
+        Response.Cookies.Append("UserID", _autoLogin.Protect(LoginId), cookieOpt);
 
         // 다크모드·언어 쿠키도 동기화
         Response.Cookies.Append("DarkMode", dm ? "1" : "0", cookieOpt);

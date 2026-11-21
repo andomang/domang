@@ -55,6 +55,7 @@ public class EmailService
         try
         {
             string code = Random.Shared.Next(100000, 999999).ToString();
+            foreach (var old in _codes.Where(x => x.Value.Expires < DateTime.UtcNow).Select(x => x.Key).ToList()) _codes.TryRemove(old, out _);   // 만료된 코드 정리
             _codes[toEmail.ToLowerInvariant()] = (code, DateTime.UtcNow.AddMinutes(5));
 
             string apiKey = _config["Brevo:ApiKey"] ?? "";

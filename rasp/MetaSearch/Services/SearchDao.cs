@@ -180,14 +180,11 @@ public class SearchDao
     }
 
     /// <summary>7일 이상 된 검색 기록·캐시 자동 삭제</summary>
+    /// 오류는 삼키지 않음: 호출하는 정리 작업(Program.cs)이 실패를 로그로 남김 (개인정보 7일 삭제 약속이 몰래 깨지지 않게)
     public void CleanupOldRecords()
     {
-        try
-        {
-            using var conn = _db.OpenConnection();
-            conn.Execute("DELETE FROM searchhistory WHERE searchtime < NOW() - INTERVAL '7 days'");
-            conn.Execute("DELETE FROM searchresultcache WHERE cachedat < NOW() - INTERVAL '7 days'");
-        }
-        catch { }
+        using var conn = _db.OpenConnection();
+        conn.Execute("DELETE FROM searchhistory WHERE searchtime < NOW() - INTERVAL '7 days'");
+        conn.Execute("DELETE FROM searchresultcache WHERE cachedat < NOW() - INTERVAL '7 days'");
     }
 }

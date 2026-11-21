@@ -3,6 +3,7 @@
 
 using MetaSearch.Services;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +33,12 @@ builder.Services.AddRazorPages(options =>
 
 // 세션 (Web Forms Session 대체) — 쿠키 보안 강화
 builder.Services.AddDistributedMemoryCache();
+// 자동 로그인 쿠키 서명용 키: 고정 폴더에 저장해 서버를 재시작해도 기존 쿠키가 유효하게 유지
+builder.Services.AddDataProtection()
+    .SetApplicationName("domang")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".domang-keys")));
+
 builder.Services.AddSession(opt =>
 {
     opt.IdleTimeout = TimeSpan.FromMinutes(60);
@@ -476,9 +483,13 @@ app.MapGet("/pokemon", (HttpContext ctx) =>
 var _rateLimits = new System.Collections.Concurrent.ConcurrentDictionary<string, (int Count, DateTime ResetAt)>();
 
 // 레이트 리미트 체크 헬퍼: 제한 초과 시 true 반환
+int _rateCalls = 0;
 bool IsRateLimited(string key, int maxRequests, int windowSeconds)
 {
     var now = DateTime.UtcNow;
+    // 1000번째 호출마다 시간 창이 끝난 기록을 지움 (새 IP·봇마다 항목이 계속 늘던 문제)
+    if (Interlocked.Increment(ref _rateCalls) % 1000 == 0)
+        foreach (var old in _rateLimits.Where(x => now > x.Value.ResetAt).Select(x => x.Key).ToList()) _rateLimits.TryRemove(old, out _);
     var entry = _rateLimits.GetOrAdd(key, _ => (0, now.AddSeconds(windowSeconds)));
     if (now > entry.ResetAt)
     {
