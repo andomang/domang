@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /Admin
+Disallow: /Settings
+Disallow: /Logout
+Disallow: /Drive
+Disallow: /DriveFiles
+Disallow: /pokeadmin
+Disallow: /signin
+Disallow: /metasearch/login
+Disallow: /metasearch/admin
+Disallow: /metasearch/settings
+
+Sitemap: https://domang.org/sitemap.xml

@@ -1,0 +1,339 @@
+@page "/driveindex"
+@model DriveIndexModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cloud Drive — 프로젝트 소개</title>
+    <meta name="description" content="개인 클라우드 드라이브 프로젝트 소개. 파일 업로드·다운로드, 폴더 관리, 대용량 파일 지원." />
+    <!-- 검색엔진·공유 미리보기: 대표 주소 / Open Graph / 트위터 카드 / 구조화 데이터 -->
+    <link rel="canonical" href="https://domang.org/driveindex" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="domang" />
+    <meta property="og:locale" content="ko_KR" />
+    <meta property="og:url" content="https://domang.org/driveindex" />
+    <meta property="og:title" content="Cloud Drive — 프로젝트 소개" />
+    <meta property="og:description" content="개인 클라우드 드라이브 프로젝트 소개. 파일 업로드·다운로드, 폴더 관리, 대용량 파일 지원." />
+    <meta property="og:image" content="https://domang.org/img/og/drive.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Cloud Drive — 프로젝트 소개" />
+    <meta name="twitter:description" content="개인 클라우드 드라이브 프로젝트 소개. 파일 업로드·다운로드, 폴더 관리, 대용량 파일 지원." />
+    <meta name="twitter:image" content="https://domang.org/img/og/drive.jpg" />
+    <script type="application/ld+json">
+    {
+      "@@context": "https://schema.org",
+      "@@type": "WebApplication",
+      "name": "Cloud Drive",
+      "url": "https://domang.org/drive",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Web",
+      "inLanguage": "ko",
+      "author": {
+        "@@type": "Person",
+        "name": "안도영",
+        "url": "https://domang.org/",
+        "sameAs": [
+          "https://github.com/andomang"
+        ]
+      },
+      "description": "개인 클라우드 드라이브 프로젝트 소개. 파일 업로드·다운로드, 폴더 관리, 대용량 파일 지원.",
+      "image": "https://domang.org/img/og/drive.jpg"
+    }
+    </script>
+    <!-- 파비콘 -->
+    <link rel="icon" href="/icons/icon-512.png" type="image/png" />
+    <!-- Google Fonts -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" />
+
+    <style>
+        /* ── 리셋 ── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0a0f0d;
+            --bg-card: #141f1a;
+            --border: #1e3a2d;
+            --text-primary: #e8f0ec;
+            --text-secondary: #8fa89a;
+            --text-muted: #5a7568;
+            --accent: #3ecf8e;
+            --accent-dim: rgba(62, 207, 142, 0.12);
+            --accent-glow: rgba(62, 207, 142, 0.25);
+            --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(ellipse at 30% 20%, rgba(62, 207, 142, 0.06) 0%, transparent 60%),
+                        radial-gradient(ellipse at 70% 80%, rgba(14, 165, 233, 0.04) 0%, transparent 60%);
+            z-index: -1;
+        }
+
+        .container { max-width: 720px; margin: 0 auto; padding: 0 20px 80px; }
+
+        /* ── 상단 바 ── */
+        .top-bar {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 16px 0; margin-bottom: 32px; border-bottom: 1px solid var(--border);
+        }
+
+        .back-link {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 14px; color: var(--text-muted); text-decoration: none; transition: color 0.2s;
+        }
+        .back-link:hover { color: var(--text-primary); }
+        .back-link svg { width: 16px; height: 16px; }
+
+        .goto-btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 10px 24px; background: var(--accent); color: #0a0f0d;
+            font-size: 14px; font-weight: 600; border-radius: 10px; text-decoration: none;
+            transition: all 0.2s ease; box-shadow: 0 4px 16px var(--accent-glow);
+        }
+        .goto-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 24px var(--accent-glow); }
+        .goto-btn svg { width: 16px; height: 16px; }
+
+        /* ── 히어로 ── */
+        .hero { text-align: center; margin-bottom: 48px; }
+
+        .hero-icon {
+            width: 80px; height: 80px; border-radius: 20px;
+            background: linear-gradient(135deg, #3ecf8e, #0ea5e9);
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 24px; box-shadow: 0 8px 32px var(--accent-glow);
+        }
+        .hero-icon svg {
+            width: 40px; height: 40px; fill: none; stroke: white;
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        .hero h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
+
+        .hero-badge {
+            display: inline-block; font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.5px; padding: 3px 10px; border-radius: 6px;
+            background: var(--accent-dim); color: var(--accent); margin-bottom: 16px;
+        }
+
+        .hero p { font-size: 16px; color: var(--text-secondary); line-height: 1.7; max-width: 560px; margin: 0 auto; }
+
+        .hero-img {
+            width: 100%; border-radius: 16px; border: 1px solid var(--border);
+            margin-bottom: 48px; box-shadow: 0 8px 40px rgba(0,0,0,0.3);
+        }
+
+        /* ── 기능 ── */
+        .section-title {
+            font-size: 12px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 2px; color: var(--text-muted); margin-bottom: 20px; padding-left: 4px;
+        }
+
+        .features { display: flex; flex-direction: column; gap: 12px; margin-bottom: 40px; }
+
+        .feature-item {
+            display: flex; align-items: flex-start; gap: 14px;
+            padding: 16px 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+        }
+
+        .feature-icon {
+            flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px;
+            background: var(--accent-dim); display: flex; align-items: center; justify-content: center;
+        }
+        .feature-icon svg {
+            width: 18px; height: 18px; fill: none; stroke: var(--accent);
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
+
+        .feature-text h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+        .feature-text p { font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+        /* ── 기술 스택 ── */
+        .tech-section { margin-bottom: 40px; }
+        .tech-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tech-chip {
+            font-family: var(--font-mono); font-size: 12px; padding: 6px 14px; border-radius: 8px;
+            background: var(--bg-card); color: var(--text-secondary); border: 1px solid var(--border);
+        }
+
+        /* ── 하단 ── */
+        .bottom-cta { text-align: center; padding-top: 40px; border-top: 1px solid var(--border); }
+        .bottom-cta p { font-size: 14px; color: var(--text-muted); margin-bottom: 16px; }
+
+        /* ── 연락처 & 저작권 ── */
+        .site-footer {
+            text-align: center; margin-top: 40px; padding-top: 24px;
+            border-top: 1px solid var(--border);
+        }
+        .footer-contact {
+            display: flex; align-items: center; justify-content: center;
+            flex-wrap: wrap; gap: 6px; font-size: 13px;
+            color: var(--text-muted); margin-bottom: 10px;
+        }
+        .footer-name { font-weight: 600; color: var(--text-secondary); }
+        .footer-divider { opacity: 0.4; }
+        .footer-ico {
+            width: 14px; height: 14px; flex-shrink: 0;
+            fill: none; stroke: var(--text-muted);
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
+        .footer-email { color: var(--accent); text-decoration: none; transition: opacity 0.2s; }
+        .footer-email:hover { opacity: 0.8; }
+        .footer-copyright { font-size: 12px; color: var(--text-muted); opacity: 0.6; }
+
+        @@keyframes fadeUp {
+            from { opacity: 0; transform: translateY(16px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .animate-in { animation: fadeUp 0.5s cubic-bezier(0.4, 0, 0.2, 1) both; }
+        .delay-1 { animation-delay: 0.08s; }
+        .delay-2 { animation-delay: 0.16s; }
+        .delay-3 { animation-delay: 0.24s; }
+        .delay-4 { animation-delay: 0.32s; }
+
+        @@media (max-width: 480px) {
+            .hero h1 { font-size: 24px; }
+            .hero-icon { width: 64px; height: 64px; border-radius: 16px; }
+            .hero-icon svg { width: 32px; height: 32px; }
+            .top-bar { flex-direction: column; gap: 12px; align-items: stretch; text-align: center; }
+            .goto-btn { justify-content: center; }
+        }
+    </style>
+    <!-- 구글 애드센스 (설정에 게시자 ID가 있을 때만, 제외 경로 제외) -->
+    <partial name="_AdHead" />
+</head>
+<body>
+    <div class="container">
+
+        <!-- 상단 바로가기 -->
+        <div class="top-bar animate-in">
+            <a href="/" class="back-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+                포트폴리오로 돌아가기
+            </a>
+            <a href="/drive" class="goto-btn">
+                Cloud Drive 바로가기
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+            </a>
+        </div>
+
+        <!-- 히어로 -->
+        <div class="hero animate-in delay-1">
+            <div class="hero-icon">
+                <svg viewBox="0 0 24 24">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+            </div>
+            <span class="hero-badge">Live Service</span>
+            <h1>Cloud Drive</h1>
+            <p>
+                개인 클라우드 드라이브입니다.
+                파일 업로드·다운로드, 폴더 관리, 청크 업로드로 대용량 파일도 안정적으로 처리합니다.
+                라즈베리파이 4 SSD에서 직접 운영합니다.
+            </p>
+        </div>
+
+        <!-- 썸네일 -->
+        <img src="/img/drive-card.png" alt="Cloud Drive 스크린샷" class="hero-img animate-in delay-2" />
+
+        <!-- 주요 기능 -->
+        <div class="section-title animate-in delay-2">주요 기능</div>
+        <div class="features animate-in delay-2">
+            <div class="feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                </div>
+                <div class="feature-text">
+                    <h3>청크 업로드</h3>
+                    <p>대용량 파일을 여러 조각으로 나누어 업로드합니다. 네트워크 중단에도 이어받기가 가능합니다.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
+                </div>
+                <div class="feature-text">
+                    <h3>폴더 관리</h3>
+                    <p>폴더 생성·이동·삭제, 파일 이름 변경 등 직관적인 파일 탐색기 인터페이스를 제공합니다.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                </div>
+                <div class="feature-text">
+                    <h3>파일 다운로드 &amp; 미리보기</h3>
+                    <p>파일을 바로 다운로드하거나 이미지·텍스트 파일은 브라우저에서 미리보기할 수 있습니다.</p>
+                </div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">
+                    <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                </div>
+                <div class="feature-text">
+                    <h3>회원 전용 스토리지</h3>
+                    <p>로그인한 사용자마다 독립된 저장 공간을 제공합니다. 라즈베리파이 SSD 스토리지에서 직접 서빙합니다.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 기술 스택 -->
+        <div class="tech-section animate-in delay-3">
+            <div class="section-title">기술 스택</div>
+            <div class="tech-grid">
+                <span class="tech-chip">ASP.NET Core 8</span>
+                <span class="tech-chip">Razor Pages</span>
+                <span class="tech-chip">PostgreSQL</span>
+                <span class="tech-chip">Chunk Upload</span>
+                <span class="tech-chip">SSD Storage</span>
+                <span class="tech-chip">Raspberry Pi 4</span>
+                <span class="tech-chip">Nginx</span>
+            </div>
+        </div>
+
+        <!-- 하단 바로가기 -->
+        <div class="bottom-cta animate-in delay-4">
+            <p>직접 사용해 보세요</p>
+            <a href="/drive" class="goto-btn">
+                Cloud Drive 바로가기
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+            </a>
+        </div>
+
+        <!-- 연락처 & 저작권 -->
+        <!-- 광고: 본문 아래 -->
+        <div style="margin:24px 0"><partial name="_AdUnit" model='@("inline")' /></div>
+
+        <footer class="site-footer animate-in delay-5">
+            <div class="footer-contact">
+                <span class="footer-name">안도영</span>
+                <span class="footer-divider">·</span>
+                <svg class="footer-ico" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.362 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" /></svg>
+                <span>010-2583-1894</span>
+                <span class="footer-divider">·</span>
+                <svg class="footer-ico" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
+                <a href="mailto:metasearch@@domang.org" class="footer-email">metasearch@@domang.org</a>
+            </div>
+            <p class="footer-copyright">&copy; 2026 안도영 (domang.org). All rights reserved. · <a href="/Privacy" style="color:inherit;text-decoration:underline">개인정보처리방침</a></p>
+        </footer>
+
+    </div>
+</body>
+</html>

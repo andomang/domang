@@ -1,0 +1,22 @@
+# 올리는 것만 고르는 방식: 맨 위에서 전부 제외하고, 아래 "!" 줄에 적은 것만 올림
+#   (예전 WebForms 버전, 과제 문서(hwp), PokeAPI 스프라이트 복사본, 게임 에셋 등은 저장소에 넣지 않음)
+/*
+!/.gitignore
+!/README.md
+!/CLAUDE.md
+!/rasp/
+!/pokemon/
+
+# 비밀값 (API 키, DB 비밀번호) — 예시는 appsettings.example.json
+rasp/MetaSearch/appsettings.json
+rasp/MetaSearch/appsettings.*.json
+!rasp/MetaSearch/appsettings.example.json
+
+# 빌드·배포 산출물
+bin/
+obj/
+.vs/
+*.user
+rasp/publish/
+.deploy-hashes
+rasp/MetaSearch/wwwroot/pokemon/
