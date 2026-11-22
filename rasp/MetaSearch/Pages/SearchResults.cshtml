@@ -2,11 +2,9 @@
 @model SearchResultsModel
 @{
     ViewData["Title"] = Model.Query + " - Meta Search 통합검색 결과";
+    ViewData["Description"] = "'" + Model.Query + "' 통합 검색 결과 — 구글·네이버·다음·Brave 결과를 한 번에 모아 순위를 다시 매긴 Meta Search 결과입니다.";
 }
 
-@section HeadContent {
-    <meta name="description" content="'@Model.Query' 검색 결과 - 구글, 네이버, 다음, 빙, 유튜브, 나무위키에서 동시에 검색한 통합 결과입니다. Meta Search에서 여러 검색엔진 결과를 한눈에 비교하세요." />
-}
 
 <!-- 상단 고정 검색바 -->
 <div class="border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-16 z-40">

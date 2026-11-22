@@ -2,11 +2,12 @@
 @model CommunityViewModel
 @{
     ViewData["Title"] = (Model.Post?.Title ?? "게시글") + " - Meta Search 커뮤니티";
+    // 검색 결과 설명: 글 제목 + 본문 앞부분 (태그·줄바꿈 제거, 150자)
+    string postDesc = Model.Post == null ? "Meta Search 커뮤니티 게시글"
+        : (Model.Post.Title + " — " + System.Text.RegularExpressions.Regex.Replace(Model.Post.Contents ?? "", @"<.*?>|\s+", " ")).Trim();
+    ViewData["Description"] = postDesc.Length > 150 ? postDesc[..150] + "…" : postDesc;
 }
 
-@section HeadContent {
-    <meta name="description" content="@(Model.Post?.Title ?? "게시글") - Meta Search 커뮤니티 게시판. 다양한 정보를 공유하고 토론하는 무료 온라인 커뮤니티입니다." />
-}
 
 <div class="max-w-4xl mx-auto px-6 py-12 min-h-screen">
     <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-3xl overflow-hidden shadow-sm">
@@ -171,14 +172,14 @@
     var delBtnTxt= '@Html.Raw(Model.Lang.Get("comm.delComment"))';
 
     // 초기 좋아요 상태 로드
-    fetch('/CommunityView?handler=GetLike&no=' + postNo)
+    fetch('/metasearch/community/view?handler=GetLike&no=' + postNo)
         .then(function(r){ return r.json(); })
         .then(function(d){ document.getElementById('likeCount').textContent = d.count; setLikeStyle(d.liked); });
 
     // 좋아요 토글
     function toggleLike() {
         if (!isLogin) { openLogin(); return; }
-        fetch('/CommunityView?handler=ToggleLike&no=' + postNo)
+        fetch('/metasearch/community/view?handler=ToggleLike&no=' + postNo, { headers: { 'X-Requested-With': 'fetch' } })
             .then(function(r){ return r.json(); })
             .then(function(d){ document.getElementById('likeCount').textContent = d.count; isLiked = d.liked; setLikeStyle(d.liked); });
     }
@@ -201,7 +202,7 @@
         var input = document.getElementById('txtCommentInput');
         var content = input.value.trim();
         if (!content) return;
-        fetch('/CommunityView?handler=AddComment&no=' + postNo + '&content=' + encodeURIComponent(content))
+        fetch('/metasearch/community/view?handler=AddComment&no=' + postNo + '&content=' + encodeURIComponent(content), { headers: { 'X-Requested-With': 'fetch' } })
             .then(function(r){ return r.json(); })
             .then(function(d){
                 if (d.result !== 'ok') return;
@@ -223,7 +224,7 @@
     // 댓글 삭제
     function deleteComment(commentID, btn) {
         if (!confirm(delMsg)) return;
-        fetch('/CommunityView?handler=DeleteComment&commentID=' + commentID + '&no=' + postNo)
+        fetch('/metasearch/community/view?handler=DeleteComment&commentID=' + commentID + '&no=' + postNo, { headers: { 'X-Requested-With': 'fetch' } })
             .then(function(r){ return r.json(); })
             .then(function(d){
                 if (d.result !== 'ok') return;

@@ -125,19 +125,27 @@
     <link rel="icon" href="/icons/icon-512.png" type="image/png" />
 
     <!-- ── SEO 기본 메타태그 ── -->
-    <meta name="description" content="더 나은 검색을 경험하세요 — 구글, 네이버, 다음, 빙, 유튜브, 나무위키를 한 번에 검색하는 무료 통합 검색엔진. AI 추천, 인기검색어 TOP10, 실시간 트렌드까지." />
-    <meta name="keywords" content="메타서치,메타검색,통합검색,검색엔진,meta search,metasearch,구글검색,네이버검색,다음검색,빙검색,유튜브검색,나무위키검색,동시검색,멀티검색,비교검색,한번에검색,올인원검색,만능검색,최고의검색,최강검색엔진,무료검색,빠른검색,정확한검색,실시간검색,인기검색어,검색트렌드,AI검색,인공지능검색,AI추천검색,스마트검색,똑똑한검색,검색도우미,검색포털,검색사이트,검색서비스,웹검색,인터넷검색,온라인검색,통합검색엔진,멀티검색엔진,다중검색,복합검색,교차검색,크로스검색,하이브리드검색,구글대안,네이버대안,검색결과비교,검색최적화,정보검색,자료검색,논문검색,뉴스검색,이미지검색,동영상검색,지식검색,블로그검색,카페검색,쇼핑검색,지도검색,학술검색,전문검색,고급검색,상세검색,키워드검색,연관검색,추천검색어,자동완성,검색제안,search engine,web search,multi search,all in one search,unified search,aggregate search,best search engine,fast search,accurate search,smart search,AI search,Korean search,한국어검색,국내검색,해외검색,글로벌검색,검색엔진추천,검색엔진비교,검색엔진순위,인기검색사이트,많이쓰는검색엔진,좋은검색엔진,편리한검색,간편검색,원클릭검색,원스톱검색,검색모아,검색통합,포털사이트,포털검색,검색도구,검색앱,검색플랫폼,커뮤니티,게시판,자유게시판,토론,질문답변,회원커뮤니티,온라인커뮤니티,사용자리뷰,평점,별점,사용후기,경험평가,서비스평가,다크모드,다국어지원,영어검색,일본어검색,중국어검색,모바일검색,PC검색,데스크톱검색,반응형웹,무료사이트,무료서비스,회원가입무료,학생검색,직장인검색,연구자검색,개발자검색,프리랜서검색,맛집검색,여행검색,영화검색,음악검색,게임검색,IT검색,테크검색,경제검색,주식검색,부동산검색,건강검색,의료검색,교육검색,입시검색,취업검색,채용검색,프로그래밍검색,코딩검색,개발검색,깃허브검색,스택오버플로우검색,파이썬검색,자바검색,자바스크립트검색,리액트검색,날씨검색,환율검색,주가검색,코인검색,비트코인검색,스포츠검색,야구검색,축구검색,농구검색,올림픽검색,K-pop검색,한국드라마검색,웹툰검색,넷플릭스검색,쿠팡검색,11번가검색,네이버쇼핑검색,가격비교,최저가검색,핫딜검색,서울검색,부산검색,인천검색,대구검색,대전검색,광주검색,제주검색,ChatGPT검색,GPT검색,AI챗봇,생성형AI검색,인공지능메타검색,차세대검색엔진,2026검색엔진,2026추천검색엔진,최신검색서비스,free search engine,free meta search,Korean meta search engine,Korea search,Naver alternative,Google alternative,multi search Korea,aggregate search Korea,best Korean search,trending keywords Korea,popular search Korea,community board Korea,user review,dark mode search,multilingual search,mobile search,responsive search,academic search Korea,student search,business search,news search Korea,blog search,shopping search Korea,real estate search Korea,stock search Korea,crypto search Korea,travel search Korea,food search Korea,K-drama search,K-pop search,webtoon search" />
+    @{
+        // 검색엔진용 설명·대표 주소 (페이지마다 하나씩)
+        string seoDesc = ViewData["Description"] as string ?? "구글·네이버·다음·Brave 검색 결과를 한 번에 모아 순위를 다시 매기는 무료 통합 검색엔진 Meta Search. 인기 검색어와 실시간 트렌드, AI 추천 검색어를 함께 보여 줍니다.";
+        string seoPath = Context.Request.Path.Value?.TrimEnd('/') is { Length: > 0 } sp ? sp : "/";
+        // 게시글은 번호까지가 대표 주소 (예전엔 ?no= 가 빠져 모든 게시글이 같은 페이지로 취급돼 색인이 안 됐음)
+        if (seoPath.Equals("/metasearch/community/view", StringComparison.OrdinalIgnoreCase) && int.TryParse(Context.Request.Query["no"], out int seoNo))
+            seoPath += "?no=" + seoNo;
+    }
+    <meta name="description" content="@seoDesc" />
+    <meta name="keywords" content="메타서치,메타검색,통합검색,검색엔진,meta search,metasearch,구글검색,네이버검색,다음검색,Brave 검색,인기검색어,실시간 트렌드" />
     <meta name="author" content="Meta Search" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
     @* 대표 주소: 각 페이지 자기 주소 (예전엔 모든 페이지가 메인 "/"을 가리켜 커뮤니티·리포트 등이 검색에 따로 안 잡혔음). 예전 도메인으로 와도 domang.org로 모음 *@
-    <link rel="canonical" href="https://domang.org@(Context.Request.Path.Value?.TrimEnd('/') is { Length: > 0 } cp ? cp : "/")" />
+    <link rel="canonical" href="https://domang.org@(seoPath)" />
 
     <!-- ── Open Graph (페이스북, 카카오톡, 디스코드 공유) ── -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Meta Search - 통합 메타 검색엔진" />
-    <meta property="og:title" content="Meta Search — 더 나은 검색을 경험하세요" />
-    <meta property="og:description" content="더 나은 검색을 경험하세요 — 구글, 네이버, 다음, 빙, 유튜브, 나무위키를 한 번에! 무료 통합 검색엔진." />
-    <meta property="og:url" content="https://domang.org@(Context.Request.Path.Value?.TrimEnd('/') is { Length: > 0 } ou ? ou : "/")" />
+    <meta property="og:title" content="@ViewData["Title"] - Meta Search" />
+    <meta property="og:description" content="@seoDesc" />
+    <meta property="og:url" content="https://domang.org@(seoPath)" />
     <meta property="og:locale" content="ko_KR" />
     <meta property="og:image" content="https://domang.org/img/og/metasearch.jpg" />
     <meta property="og:image:width" content="1200" />
@@ -147,7 +155,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://domang.org/img/og/metasearch.jpg" />
     <meta name="twitter:title" content="Meta Search - 통합 메타 검색엔진" />
-    <meta name="twitter:description" content="더 나은 검색을 경험하세요 — 구글, 네이버, 다음, 빙, 유튜브, 나무위키를 한 번에 검색하는 무료 통합 검색엔진" />
+    <meta name="twitter:description" content="@seoDesc" />
 
     <!-- ── 네이버 웹마스터 도구 / 검색 노출 ── -->
     <meta name="naver-site-verification" content="141dab1318c96c6839c132e11c69af5d7866e7b2" />
@@ -163,160 +171,28 @@
     <meta name="google" content="notranslate" />
 
     <!-- ── 추가 SEO 메타 ── -->
-    <meta name="subject" content="통합 메타 검색엔진 - 구글 네이버 다음 빙 유튜브 나무위키 동시 검색" />
+    <meta name="subject" content="통합 메타 검색엔진 - 구글 네이버 다음 Brave 동시 검색" />
     <meta name="classification" content="검색엔진, Search Engine, 인터넷 서비스" />
     <meta name="rating" content="General" />
     <meta name="distribution" content="Global" />
     <meta name="revisit-after" content="1 days" />
 
-    <!-- ── JSON-LD 구조화 데이터 (구글 검색결과 강화) ── -->
+    <!-- ── JSON-LD 구조화 데이터: 사이트 이름 + 사이트 안 검색창 (검색 주소는 실제 결과 페이지)
+         예전에 있던 별점(SoftwareApplication 4.5점/100건)은 실제 평가가 아닌 고정값이라 구글 스팸 정책 위반 소지 → 삭제
+         모든 페이지에 같던 FAQ·옛 도메인 고정 경로(Breadcrumb)도 삭제 ── -->
     <script type="application/ld+json">
     {
         "@@context": "https://schema.org",
         "@@type": "WebSite",
         "name": "Meta Search",
-        "alternateName": ["메타서치", "메타검색", "통합검색엔진", "MetaSearch"],
-        "url": "@baseUrl",
-        "description": "더 나은 검색을 경험하세요 — 구글, 네이버, 다음, 빙, 유튜브, 나무위키를 한 번에 검색하는 무료 통합 검색엔진",
-        "inLanguage": ["ko", "en", "ja", "zh"],
+        "alternateName": ["메타서치", "메타검색", "통합검색엔진"],
+        "url": "@(baseUrl)/metasearch",
+        "description": "구글·네이버·다음·Brave 검색 결과를 한 번에 모아 순위를 다시 매기는 무료 통합 검색엔진 Meta Search. 인기 검색어와 실시간 트렌드, AI 추천 검색어를 함께 보여 줍니다.",
+        "inLanguage": "ko",
         "potentialAction": {
             "@@type": "SearchAction",
-            "target": "@(baseUrl)/Search?q={search_term_string}",
+            "target": "@(baseUrl)/metasearch/results?q={search_term_string}",
             "query-input": "required name=search_term_string"
-        }
-    }
-    </script>
-    <script type="application/ld+json">
-    {
-        "@@context": "https://schema.org",
-        "@@type": "Organization",
-        "name": "Meta Search",
-        "url": "@baseUrl",
-        "description": "더 나은 검색을 경험하세요 — 여러 검색엔진을 한번에 사용할 수 있는 무료 통합 메타 검색 서비스",
-        "sameAs": []
-    }
-    </script>
-    <!-- ── FAQ 구조화 데이터 (구글 검색결과에 FAQ 표시) ── -->
-    <script type="application/ld+json">
-    {
-        "@@context": "https://schema.org",
-        "@@type": "FAQPage",
-        "mainEntity": [
-            {
-                "@@type": "Question",
-                "name": "Meta Search란 무엇인가요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "Meta Search는 구글, 네이버, 다음, 빙, 유튜브, 나무위키 등 여러 검색엔진을 한 번에 검색할 수 있는 무료 통합 메타 검색엔진입니다. 하나의 검색창에서 모든 검색엔진의 결과를 동시에 비교할 수 있습니다."
-                }
-            },
-            {
-                "@@type": "Question",
-                "name": "Meta Search는 무료인가요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "네, Meta Search는 완전히 무료입니다. 회원가입도 무료이며, 모든 검색 기능을 제한 없이 사용할 수 있습니다. 광고 없이 깔끔한 검색 경험을 제공합니다."
-                }
-            },
-            {
-                "@@type": "Question",
-                "name": "어떤 검색엔진을 지원하나요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "구글(Google), 네이버(Naver), 다음(Daum), 빙(Bing), 유튜브(YouTube), 나무위키(Namuwiki)를 지원합니다. 한 번의 검색으로 6개 검색엔진의 결과를 동시에 확인할 수 있습니다."
-                }
-            },
-            {
-                "@@type": "Question",
-                "name": "모바일에서도 사용할 수 있나요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "네, Meta Search는 반응형 웹으로 제작되어 PC, 스마트폰, 태블릿 등 모든 기기에서 최적화된 화면으로 사용할 수 있습니다. 별도의 앱 설치 없이 브라우저에서 바로 접속하세요."
-                }
-            },
-            {
-                "@@type": "Question",
-                "name": "다크모드를 지원하나요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "네, Meta Search는 다크모드를 지원합니다. 설정에서 다크모드를 활성화하면 어두운 환경에서도 눈의 피로를 줄이며 편안하게 검색할 수 있습니다."
-                }
-            },
-            {
-                "@@type": "Question",
-                "name": "검색 기록은 안전한가요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "Meta Search는 사용자의 개인정보를 보호합니다. 검색 기록은 7일 후 자동으로 삭제되며, SSL 암호화 통신을 통해 안전하게 데이터를 전송합니다."
-                }
-            },
-            {
-                "@@type": "Question",
-                "name": "AI 추천 검색은 무엇인가요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "Meta Search의 AI 추천 검색 기능은 인공지능이 사용자의 검색어를 분석하여 관련된 추천 검색어와 연관 키워드를 제안하는 기능입니다. 더 정확하고 풍부한 검색 결과를 찾을 수 있도록 도와줍니다."
-                }
-            },
-            {
-                "@@type": "Question",
-                "name": "커뮤니티 기능은 어떤 건가요?",
-                "acceptedAnswer": {
-                    "@@type": "Answer",
-                    "text": "Meta Search의 커뮤니티 게시판에서 다른 사용자들과 정보를 공유하고, 질문과 답변을 주고받을 수 있습니다. 자유게시판에서 다양한 주제로 토론할 수 있으며, 댓글과 좋아요 기능을 제공합니다."
-                }
-            }
-        ]
-    }
-    </script>
-    <!-- ── BreadcrumbList 구조화 데이터 ── -->
-    <script type="application/ld+json">
-    {
-        "@@context": "https://schema.org",
-        "@@type": "BreadcrumbList",
-        "itemListElement": [
-            {
-                "@@type": "ListItem",
-                "position": 1,
-                "name": "홈",
-                "item": "https://metasearch.kro.kr/"
-            },
-            {
-                "@@type": "ListItem",
-                "position": 2,
-                "name": "검색",
-                "item": "https://metasearch.kro.kr/SearchResults"
-            },
-            {
-                "@@type": "ListItem",
-                "position": 3,
-                "name": "커뮤니티",
-                "item": "https://metasearch.kro.kr/Community"
-            }
-        ]
-    }
-    </script>
-    <!-- ── SoftwareApplication 구조화 데이터 (앱 정보) ── -->
-    <script type="application/ld+json">
-    {
-        "@@context": "https://schema.org",
-        "@@type": "SoftwareApplication",
-        "name": "Meta Search",
-        "operatingSystem": "Web Browser",
-        "applicationCategory": "SearchApplication",
-        "description": "구글, 네이버, 다음, 빙, 유튜브, 나무위키를 한 번에 검색하는 무료 통합 메타 검색엔진",
-        "url": "https://metasearch.kro.kr",
-        "offers": {
-            "@@type": "Offer",
-            "price": "0",
-            "priceCurrency": "KRW"
-        },
-        "aggregateRating": {
-            "@@type": "AggregateRating",
-            "ratingValue": "4.5",
-            "ratingCount": "100",
-            "bestRating": "5",
-            "worstRating": "1"
         }
     }
     </script>

@@ -103,6 +103,29 @@ builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompress
 var app = builder.Build();
 app.UseResponseCompression();
 
+// 옛 메타서치 주소 → /metasearch/... 로 영구 이동(301): 한 페이지에 주소가 둘이라 구글이 '대체 페이지'로 색인을 빼던 문제
+//   페이지를 여는 GET/HEAD만 옮김 (POST 폼 전송은 301에서 내용이 사라지므로 그대로 둠), 쿼리(?no= 등)는 유지
+var legacyRoutes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+{
+    ["/SearchResults"] = "/metasearch/results", ["/Community"] = "/metasearch/community",
+    ["/CommunityView"] = "/metasearch/community/view", ["/CommunityWrite"] = "/metasearch/community/write",
+    ["/CommunityEdit"] = "/metasearch/community/edit", ["/Bookmarks"] = "/metasearch/bookmarks",
+    ["/Dashboard"] = "/metasearch/dashboard", ["/Settings"] = "/metasearch/settings",
+    ["/Login"] = "/metasearch/login", ["/Register"] = "/metasearch/register",
+    ["/FindAccount"] = "/metasearch/find-account", ["/EvalReport"] = "/metasearch/report",
+    ["/Eval"] = "/metasearch/eval", ["/Index"] = "/metasearch", ["/Search"] = "/metasearch/results",
+};
+app.Use(async (ctx, next) =>
+{
+    if ((HttpMethods.IsGet(ctx.Request.Method) || HttpMethods.IsHead(ctx.Request.Method))
+        && ctx.Request.Path.HasValue && legacyRoutes.TryGetValue(ctx.Request.Path.Value!.TrimEnd('/'), out var to))
+    {
+        ctx.Response.Redirect(to + ctx.Request.QueryString, permanent: true);
+        return;
+    }
+    await next();
+});
+
 // 드라이브 스키마 마이그레이션 + 기본 계정 생성
 // DB가 앱보다 늦게 시작될 수 있으므로 재시도 포함
 // 검색 기록 7일 자동 삭제 (회의 결정사항 / 개인정보처리방침·검색 안내 문구와 일치)
@@ -1573,44 +1596,38 @@ app.MapPost("/api/account/find-pw/reset", (HttpContext ctx, DbService db) =>
     return Results.Json(new { result = "ok" });
 });
 
-// ── 동적 사이트맵 (커뮤니티 게시글 포함, 검색엔진 크롤링 최적화) ──
-app.MapGet("/sitemap.xml", (DbService db) =>
+// ── 사이트맵 (구글·네이버 제출용) ─────────────────────────────────────────
+// 서버가 요청 때마다 만듦 → 새 게시글이 바로 들어감 (예전 정적 sitemap.xml은 게시글이 빠져 있었고,
+//   이 코드는 옛 도메인 metasearch.kro.kr 로 적혀 있었는데 정적 파일에 가려 쓰이지도 않았음)
+// 주소는 모두 301 이동이 없는 '대표 주소'만 (옛 /Community 같은 주소를 넣으면 구글이 대체 페이지로 처리)
+app.MapGet("/sitemap.xml", (HttpContext ctx, DbService db) =>
 {
+    const string site = "https://domang.org";
     var sb = new System.Text.StringBuilder();
     sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
     sb.AppendLine("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">");
+    void Url(string path, string? lastmod = null) =>
+        sb.AppendLine($"  <url><loc>{site}{path}</loc>{(lastmod != null ? $"<lastmod>{lastmod}</lastmod>" : "")}</url>");
 
-    // 고정 페이지
-    var pages = new[] {
-        ("/", "daily", "1.0"),
-        ("/SearchResults", "always", "0.9"),
-        ("/Community", "daily", "0.8"),
-        ("/Eval", "weekly", "0.7"),
-        ("/EvalReport", "weekly", "0.6"),
-        ("/Register", "monthly", "0.5"),
-        ("/Login", "monthly", "0.4"),
-        ("/Privacy", "yearly", "0.2")
-    };
-    foreach (var (path, freq, priority) in pages)
-    {
-        sb.AppendLine($"  <url><loc>https://metasearch.kro.kr{path}</loc><changefreq>{freq}</changefreq><priority>{priority}</priority></url>");
-    }
+    // 고정 페이지: 메인 포트폴리오 → 프로젝트 소개 → 서비스
+    foreach (var path in new[] { "/", "/metaindex", "/pokeindex", "/driveindex", "/ottindex",
+                                 "/metasearch", "/metasearch/community", "/metasearch/report", "/metasearch/eval",
+                                 "/pokemon", "/Privacy" })   // /drive·/signin 은 로그인 입구라 noindex → 사이트맵에서 뺌
+        Url(path);
 
-    // 커뮤니티 게시글 동적 추가 (최근 200개)
+    // 커뮤니티 게시글 전체 (게시글마다 따로 검색에 나오게, 최근 글 먼저 최대 5000개)
     try
     {
         using var conn = db.OpenConnection();
         var posts = Dapper.SqlMapper.Query<(int no, DateTime uploadtime)>(conn,
-            "SELECT no, uploadtime FROM bbs ORDER BY no DESC LIMIT 200");
+            "SELECT no, uploadtime FROM bbs ORDER BY no DESC LIMIT 5000");
         foreach (var p in posts)
-        {
-            var lastmod = p.uploadtime.ToString("yyyy-MM-dd");
-            sb.AppendLine($"  <url><loc>https://metasearch.kro.kr/CommunityView?no={p.no}</loc><lastmod>{lastmod}</lastmod><changefreq>weekly</changefreq><priority>0.5</priority></url>");
-        }
+            Url($"/metasearch/community/view?no={p.no}", p.uploadtime.ToString("yyyy-MM-dd"));
     }
-    catch { }
+    catch (Exception ex) { Console.WriteLine("[Sitemap] 게시글 목록 실패: " + ex.Message); }
 
     sb.AppendLine("</urlset>");
+    ctx.Response.Headers.CacheControl = "public, max-age=3600";   // 1시간 캐시 (Cloudflare·검색 로봇)
     return Results.Content(sb.ToString(), "application/xml; charset=utf-8");
 });
 

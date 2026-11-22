@@ -123,9 +123,14 @@ public class CommunityViewModel : PageModel
         return new JsonResult(new { count, liked });
     }
 
+    /// <summary>사이트 안 스크립트(fetch)가 보낸 요청인지 — 링크·주소창으로 열면 이 머리글이 없음
+    /// (좋아요·댓글 쓰기·삭제가 주소만 열어도 실행돼, 다른 사이트 링크로 로그인한 회원 이름의 댓글을 달 수 있었음)</summary>
+    private bool FromPageScript() => Request.Headers["X-Requested-With"] == "fetch";
+
     /// <summary>좋아요 토글 (AJAX)</summary>
     public JsonResult OnGetToggleLike(int no)
     {
+        if (!FromPageScript()) return new JsonResult(new { result = "forbidden" }) { StatusCode = 403 };
         string? uid = HttpContext.Session.GetString("UserID");
         if (uid == null) return new JsonResult(new { result = "unauthorized" });
 
@@ -156,6 +161,7 @@ public class CommunityViewModel : PageModel
     /// <summary>댓글 추가 (AJAX)</summary>
     public JsonResult OnGetAddComment(int no, string content)
     {
+        if (!FromPageScript()) return new JsonResult(new { result = "forbidden" }) { StatusCode = 403 };
         string? uid = HttpContext.Session.GetString("UserID");
         if (uid == null) return new JsonResult(new { result = "unauthorized" });
         if (string.IsNullOrWhiteSpace(content)) return new JsonResult(new { result = "empty" });
@@ -198,6 +204,7 @@ public class CommunityViewModel : PageModel
     /// <summary>댓글 삭제 (AJAX)</summary>
     public JsonResult OnGetDeleteComment(int commentID, int no)
     {
+        if (!FromPageScript()) return new JsonResult(new { result = "forbidden" }) { StatusCode = 403 };
         string? uid = HttpContext.Session.GetString("UserID");
         if (uid == null) return new JsonResult(new { result = "unauthorized" });
 

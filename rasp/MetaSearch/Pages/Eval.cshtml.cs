@@ -34,10 +34,22 @@ public class EvalModel : PageModel
     {
         if (handler == "Run")
         {
+            // 한 번 실행에 유료 검색 API를 최대 80번 부름 → 관리자만 (예전엔 누구나·검색엔진 로봇까지 실행해 무료 한도를 썼음)
+            string? uid = HttpContext.Session.GetString("UserID");
+            bool admin = false;
+            if (uid != null)
+            {
+                using var conn = _db.OpenConnection();
+                admin = Dapper.SqlMapper.ExecuteScalar<int?>(conn, "SELECT isadmin FROM members WHERE userid = @uid", new { uid }) == 1;
+            }
+            if (!admin) return new JsonResult(new { error = "평가 실행은 관리자만 할 수 있습니다. 결과는 성능 평가 리포트에서 볼 수 있어요." }) { StatusCode = 403 };
+
             try { return await RunEvalAsync(n); }
             catch (Exception ex)
             {
-                return new JsonResult(new { error = "서버 오류: " + ex.GetType().Name + " — " + ex.Message });
+                // 내부 오류 내용은 서버 로그에만
+                Console.WriteLine("[Eval] 평가 실행 실패: " + ex);
+                return new JsonResult(new { error = "평가 중 서버 오류가 났습니다." }) { StatusCode = 500 };
             }
         }
         return Page();
