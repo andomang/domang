@@ -6,7 +6,7 @@ namespace MetaSearch.Services;
 /// <summary>
 /// 개인 클라우드 드라이브 서비스.
 /// 인증(PBKDF2 해싱), 파일·폴더 CRUD, 즐겨찾기, 휴지통, 검색, 복사 등.
-/// 물리 저장소: 관리자 /mnt/ssd/drive/{userId}/ (빠른 SSD), 일반 회원 /mnt/hdd/drive/{userId}/ (1TB HDD)
+/// 물리 저장소: /mnt/ssd/drive/{userId}/ (관리자·회원 모두 SSD — 회원용 HDD는 유전원 허브를 달 때까지 보류)
 /// </summary>
 public class DriveService
 {
@@ -15,7 +15,9 @@ public class DriveService
     // 관리자 파일은 SSD, 일반 회원 파일은 HDD에 저장
     // drive 폴더는 디스크 '안'에 만들어 둠 → 디스크가 빠지면 폴더도 안 보여서 StorageOnline()이 false가 됨
     private const string ADMIN_ROOT = "/mnt/ssd/drive";
-    private const string MEMBER_ROOT = "/mnt/hdd/drive";
+    // shortcut: 1TB HDD를 버스 전원으로 꽂으면 회전 시작 때 전원이 모자라 연결이 끊겨서(2026-11-23 5번),
+    //   유전원 USB 허브를 달 때까지 회원도 SSD에 둠. 허브를 단 뒤 회원 폴더를 /mnt/hdd/drive 로 옮기고 이 값을 되돌릴 것
+    private const string MEMBER_ROOT = "/mnt/ssd/drive";
 
     // 경로 계산은 요청마다 여러 번 일어나므로 관리자 여부를 기억해 둠 (권한 검사는 캐시 없이 IsAdmin으로 따로 함)
     // shortcut: 관리자 지정/해제는 서버를 재시작해야 저장 위치에 반영됨 — 자주 바뀌게 되면 만료 시간을 둘 것
@@ -85,6 +87,8 @@ public class DriveService
         conn.Execute("ALTER TABLE drive_files ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMP");
         // 통합 계정 연결: 회원 아이디당 드라이브 계정 하나 (GetOrCreateUserForMember의 ON CONFLICT에 필요)
         conn.Execute("CREATE UNIQUE INDEX IF NOT EXISTS drive_users_username_uq ON drive_users (username)");
+        // 회원별 용량 한도(바이트). NULL이면 기본값(MEMBER_QUOTA) — 관리자 화면에서 회원마다 조절
+        conn.Execute("ALTER TABLE drive_users ADD COLUMN IF NOT EXISTS quota_bytes BIGINT");
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -536,7 +540,20 @@ public class DriveService
     }
 
     /// <summary>용량 한도 (바이트). 관리자는 null = 무제한</summary>
-    public long? GetQuota(int userId) => IsAdmin(userId) ? null : MEMBER_QUOTA;
+    public long? GetQuota(int userId)
+    {
+        if (IsAdmin(userId)) return null;
+        using var conn = _db.OpenConnection();
+        // 관리자가 따로 정한 값이 있으면 그 값, 없으면 기본 5GB
+        return conn.QueryFirstOrDefault<long?>("SELECT quota_bytes FROM drive_users WHERE id = @userId", new { userId }) ?? MEMBER_QUOTA;
+    }
+
+    /// <summary>회원 한도 바꾸기 (null = 기본값으로) — 관리자 API에서만 호출. 바뀐 행이 없으면 false</summary>
+    public bool SetQuota(int userId, long? quotaBytes)
+    {
+        using var conn = _db.OpenConnection();
+        return conn.Execute("UPDATE drive_users SET quota_bytes = @quotaBytes WHERE id = @userId", new { userId, quotaBytes }) > 0;
+    }
 
     /// <summary>용량 계산용 사용량 — 휴지통 파일도 디스크를 차지하므로 포함</summary>
     public long GetQuotaUsage(int userId)
@@ -563,11 +580,12 @@ public class DriveService
             @"SELECT d.id AS Id, d.username AS Username, COALESCE(TRIM(m.nickname), '') AS Nickname,
                      COALESCE(SUM(f.file_size) FILTER (WHERE f.is_folder = FALSE), 0) AS Usage,
                      COUNT(f.id) FILTER (WHERE f.is_folder = FALSE) AS Files,
-                     COALESCE(m.isadmin, 0) = 1 AS IsAdmin
+                     COALESCE(m.isadmin, 0) = 1 AS IsAdmin,
+                     d.quota_bytes AS QuotaBytes
               FROM drive_users d
               LEFT JOIN members m ON TRIM(m.userid) = d.username
               LEFT JOIN drive_files f ON f.user_id = d.id
-              GROUP BY d.id, d.username, m.nickname, m.isadmin
+              GROUP BY d.id, d.username, m.nickname, m.isadmin, d.quota_bytes
               ORDER BY Usage DESC, d.username").ToList();
     }
 }
@@ -581,6 +599,8 @@ public class DriveUserRow
     public long Usage { get; set; }
     public long Files { get; set; }
     public bool IsAdmin { get; set; }
+    /// <summary>따로 정한 한도(바이트). null이면 기본값</summary>
+    public long? QuotaBytes { get; set; }
 }
 
 /// <summary>드라이브 파일/폴더 DTO</summary>

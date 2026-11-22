@@ -200,12 +200,18 @@
                 tr.appendChild(id);
                 tr.appendChild(td(u.nickname || '—', 'hide-sm'));
                 var use = td(), bar = el('span', null, 'bar'), fill = el('i');
-                var pct = u.isAdmin ? 0 : Math.min(100, u.usage / QUOTA * 100);
+                var lim = u.quotaBytes || QUOTA;   // 따로 정한 한도가 없으면 기본값
+                var pct = u.isAdmin ? 0 : Math.min(100, u.usage / lim * 100);
                 fill.style.width = pct + '%'; if (pct >= 95) fill.className = 'full';
                 bar.appendChild(fill); use.appendChild(bar);
-                use.appendChild(document.createTextNode(size(u.usage) + (u.isAdmin ? ' (무제한, SSD)' : ' / ' + size(QUOTA))));
+                var useText = document.createTextNode(size(u.usage) + (u.isAdmin ? ' (무제한)' : ' / ' + size(lim)));
+                use.appendChild(useText);
                 tr.appendChild(use);
                 tr.appendChild(td(n(u.files), 'num'));
+                tr.appendChild(quotaCell(u, function (newLim) {   // 한도를 바꾸면 사용량 막대·글자도 바로 갱신
+                    var p2 = Math.min(100, u.usage / newLim * 100); fill.style.width = p2 + '%'; fill.className = p2 >= 95 ? 'full' : '';
+                    useText.textContent = size(u.usage) + ' / ' + size(newLim);
+                }));
                 var open = function () { cur = { id: u.id, username: u.username }; driveFolder(null); };
                 tr.addEventListener('click', open);
                 tr.addEventListener('keydown', function (e) { if (e.key === 'Enter') open(); });
@@ -213,6 +219,29 @@
             });
             $('dmsg').hidden = true; $('dFiles').hidden = true; $('dUsers').hidden = false;
         }).catch(dfail);
+    }
+    // 회원별 한도 칸: 숫자(GB) 입력 + 저장. 비우고 저장하면 기본 5GB로. 관리자는 무제한이라 칸 없음
+    function quotaCell(u, onSaved) {
+        var c = td(); if (u.isAdmin) { c.textContent = '—'; return c; }
+        var box = el('div', null, 'act'); box.style.justifyContent = 'flex-start';
+        var inp = el('input'); inp.type = 'number'; inp.min = '1'; inp.max = '1000'; inp.step = '1'; inp.style.width = '76px';
+        inp.placeholder = String(Math.round(QUOTA / 1073741824)); inp.setAttribute('aria-label', u.username + ' 한도(GB)');
+        if (u.quotaBytes) inp.value = Math.round(u.quotaBytes / 1073741824);
+        var save = btn('저장', '', function () {
+            var v = inp.value.trim(), gb = v === '' ? null : Number(v);
+            if (gb !== null && (!Number.isInteger(gb) || gb < 1 || gb > 1000)) { alert('1~1000 사이 정수(GB)로 입력하세요. 비우면 기본 5GB입니다.'); return; }
+            if (gb !== null && gb * 1073741824 < u.usage && !confirm('지금 사용량(' + size(u.usage) + ')보다 작습니다. 이 회원은 파일을 지울 때까지 더 올릴 수 없게 됩니다. 그래도 바꿀까요?')) return;
+            save.disabled = true;
+            fetch('/api/drive/admin/quota', { method: 'POST', credentials: 'same-origin', headers: { Authorization: 'Bearer ' + DT, 'Content-Type': 'application/json' }, body: JSON.stringify({ user: u.id, gb: gb }) })
+                .then(function (r) { return r.json().then(function (j) { if (!r.ok || !j.ok) throw new Error(j.error || '실패'); return j; }); })
+                .then(function (j) { u.quotaBytes = gb === null ? null : j.quota; onSaved(j.quota); save.textContent = '저장됨'; setTimeout(function () { save.textContent = '저장'; save.disabled = false; }, 1200); })
+                .catch(function (e) { alert('한도를 바꾸지 못했습니다. ' + e.message); save.disabled = false; });
+        });
+        box.appendChild(inp); box.appendChild(save); c.appendChild(box);
+        // 행을 누르면 폴더가 열리므로, 이 칸 안의 클릭·키 입력은 행까지 전달하지 않음
+        c.addEventListener('click', function (e) { e.stopPropagation(); });
+        c.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Enter') save.click(); });
+        return c;
     }
     function driveFolder(folderId) {
         dget('/api/drive/admin/list?user=' + cur.id + (folderId ? '&folder=' + folderId : '')).then(function (d) {

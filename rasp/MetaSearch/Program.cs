@@ -2649,6 +2649,24 @@ app.MapGet("/api/drive/admin/users", (HttpContext ctx, DriveService drive) =>
     return Results.Json(new { users = drive.ListUsersWithUsage(), quota = DriveService.MEMBER_QUOTA });
 });
 
+// 회원별 용량 한도 바꾸기 — { user: 드라이브 계정 id, gb: 1~1000 정수 또는 null(기본 5GB로) }
+app.MapPost("/api/drive/admin/quota", async (HttpContext ctx, DriveService drive) =>
+{
+    if (DriveAdminAuth(ctx, drive) == null) return Results.Unauthorized();
+    var body = await ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+    if (!body.TryGetProperty("user", out var u) || !u.TryGetInt32(out int target)) return Results.BadRequest();
+    long? bytes = null;
+    if (body.TryGetProperty("gb", out var g) && g.ValueKind != System.Text.Json.JsonValueKind.Null)
+    {
+        // 정수 GB만, 1~1000 (디스크보다 큰 값·음수·소수 같은 실수 방지)
+        if (!g.TryGetInt32(out int gb) || gb < 1 || gb > 1000) return Results.BadRequest(new { error = "1~1000 사이 정수(GB)로 입력하세요." });
+        bytes = gb * 1024L * 1024 * 1024;
+    }
+    if (!drive.SetQuota(target, bytes)) return Results.NotFound();
+    Console.WriteLine($"[Drive] 관리자 용량 변경: user={target} quota={(bytes == null ? "기본" : bytes / (1024L * 1024 * 1024) + "GB")}");
+    return Results.Json(new { ok = true, quota = bytes ?? DriveService.MEMBER_QUOTA });
+});
+
 // 회원 드라이브의 폴더 내용
 app.MapGet("/api/drive/admin/list", (HttpContext ctx, DriveService drive) =>
 {
