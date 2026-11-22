@@ -2197,12 +2197,17 @@ app.MapPost("/api/drive/upload", async (HttpContext ctx, DriveService drive) =>
 }).DisableAntiforgery();
 
 // ── 청크 업로드 (대용량 파일) ──────────────────────────────────
-// 임시 청크 저장소: uploadId → 메타데이터
+// 예전엔 조각을 임시 폴더에 모았다가 완료 때 다시 읽어 합쳐서 디스크에 같은 데이터를 두 번 썼음
+// (5GB 업로드 = 쓰기 10GB + 읽기 5GB → 버스 전원 USB 디스크가 버티지 못하고 끊기는 원인 중 하나)
+// 지금: 시작할 때 사용자 폴더 안에 최종 크기의 '.upload-{id}' 파일을 만들고, 조각을 받는 즉시 제 위치(offset)에 씀.
+//       완료하면 같은 디스크 안에서 이름만 바꿔(File.Move) 최종 파일이 됨 → 쓰기 1번, 합치기 없음
 var _uploads = new System.Collections.Concurrent.ConcurrentDictionary<string, (int UserId, string FileName, long FileSize, int TotalChunks, int? ParentId, string Mode, HashSet<int> Done)>();
-// uploadId → 지금까지 받은 청크 바이트 합 (신고한 크기보다 많이 보내 용량 한도를 우회하는 것 차단)
-var _uploadBytes = new System.Collections.Concurrent.ConcurrentDictionary<string, long>();
+// uploadId → 조각 크기 (마지막 조각만 더 작음)
+var _uploadChunk = new System.Collections.Concurrent.ConcurrentDictionary<string, long>();
+// 업로드 중인 파일 경로 (최종 파일과 같은 폴더 = 같은 디스크라 완료 시 이름만 바꾸면 됨)
+string PartPath(DriveService drive, int userId, string uploadId) => Path.Combine(drive.EnsureUserDir(userId), ".upload-" + uploadId);
 
-// 업로드 시작 — uploadId 발급
+// 업로드 시작 — uploadId 발급 + 최종 크기 파일 미리 만들기
 app.MapPost("/api/drive/upload/start", async (HttpContext ctx, DriveService drive) =>
 {
     int? userId = DriveAuth(ctx, drive);
@@ -2213,25 +2218,36 @@ app.MapPost("/api/drive/upload/start", async (HttpContext ctx, DriveService driv
     string fileName = json.RootElement.GetProperty("fileName").GetString() ?? "file";
     long fileSize = json.RootElement.GetProperty("fileSize").GetInt64();
     int totalChunks = json.RootElement.GetProperty("totalChunks").GetInt32();
+    long chunkSize = json.RootElement.TryGetProperty("chunkSize", out var cs) ? cs.GetInt64() : 0;
     int? parentId = json.RootElement.TryGetProperty("parentId", out var p) && p.ValueKind != System.Text.Json.JsonValueKind.Null
         ? p.GetInt32() : null;
     string mode = json.RootElement.TryGetProperty("mode", out var m) ? m.GetString() ?? "" : "";
 
-    // 입력값 유효성 검증 (비정상 요청 차단)
-    if (totalChunks <= 0 || totalChunks > 50000 || fileSize <= 0)
+    // 입력값 유효성 검증 (비정상 요청 차단): 조각 크기 1~100MB, 조각 수가 크기와 맞아야 함
+    if (fileSize <= 0 || chunkSize < 1024 * 1024 || chunkSize > 100L * 1024 * 1024 ||
+        totalChunks <= 0 || totalChunks > 50000 || (fileSize + chunkSize - 1) / chunkSize != totalChunks)
         return Results.BadRequest("잘못된 업로드 파라미터");
-    // 파일명 보안 정리
     fileName = DriveService.SanitizeFileName(fileName);
-    // 용량 한도 확인 (실제 크기는 완료 단계에서 다시 확인)
+    // 용량 한도 확인 (완료 단계에서 한 번 더 확인)
     if (drive.WouldExceedQuota(userId.Value, fileSize)) return QuotaExceeded();
 
+    string dir = drive.EnsureUserDir(userId.Value);
+    Directory.CreateDirectory(dir);
+    // 서버 재시작 등으로 버려진 하루 넘은 업로드 파일 정리
+    foreach (var old in Directory.EnumerateFiles(dir, ".upload-*"))
+        try { if ((DateTime.UtcNow - File.GetLastWriteTimeUtc(old)).TotalDays > 1) File.Delete(old); } catch { }
+
     string uploadId = Guid.NewGuid().ToString("N");
+    // 최종 크기로 미리 만듦 (ext4에선 빈 공간을 실제로 쓰지 않는 sparse 파일이라 즉시 끝남)
+    using (var fs = new FileStream(PartPath(drive, userId.Value, uploadId), FileMode.CreateNew))
+        fs.SetLength(fileSize);
+    _uploadChunk[uploadId] = chunkSize;
     _uploads[uploadId] = (userId.Value, fileName, fileSize, totalChunks, parentId, mode, new HashSet<int>());
 
     return Results.Json(new { uploadId });
 });
 
-// 청크 수신
+// 청크 수신 — 받은 조각을 최종 파일의 제 위치에 바로 씀
 app.MapPost("/api/drive/upload/chunk", async (HttpContext ctx, DriveService drive) =>
 {
     int? userId = DriveAuth(ctx, drive);
@@ -2239,30 +2255,30 @@ app.MapPost("/api/drive/upload/chunk", async (HttpContext ctx, DriveService driv
 
     var form = await ctx.Request.ReadFormAsync();
     string uploadId = form["uploadId"].ToString();
-    // 안전한 파싱 (int.Parse → TryParse, 예외 방지)
     if (!int.TryParse(form["chunkIndex"].ToString(), out int chunkIndex))
         return Results.BadRequest("잘못된 청크 인덱스");
     var chunk = form.Files.GetFile("chunk");
-    if (chunk == null || !_uploads.TryGetValue(uploadId, out var meta)) return Results.BadRequest();
+    if (chunk == null || !_uploads.TryGetValue(uploadId, out var meta) || !_uploadChunk.TryGetValue(uploadId, out long chunkSize))
+        return Results.BadRequest();
     if (meta.UserId != userId.Value) return Results.Forbid();
-    // 청크 인덱스 범위 검증 (버퍼 오버플로/경로 조작 방지)
     if (chunkIndex < 0 || chunkIndex >= meta.TotalChunks) return Results.BadRequest("청크 인덱스 범위 초과");
-    // 신고한 파일 크기보다 많이 받으면 거절 (용량 우회·디스크 채우기 방지)
-    if (_uploadBytes.AddOrUpdate(uploadId, chunk.Length, (_, sum) => sum + chunk.Length) > meta.FileSize)
-        return QuotaExceeded();
 
-    // 청크를 임시 파일로 저장
-    string tmpDir = Path.Combine("/mnt/ssd/drive", "_tmp", uploadId);
-    Directory.CreateDirectory(tmpDir);
-    string chunkPath = Path.Combine(tmpDir, chunkIndex.ToString());
-    using (var fs = new FileStream(chunkPath, FileMode.Create))
+    // 조각 크기가 정확해야 함 (마지막만 남은 크기) → 신고 크기보다 많이 써서 용량을 우회할 수 없음
+    long offset = chunkIndex * chunkSize;
+    if (chunk.Length != Math.Min(chunkSize, meta.FileSize - offset))
+        return Results.BadRequest("조각 크기가 맞지 않습니다.");
+
+    // 여러 조각이 동시에 같은 파일의 다른 위치에 씀 (FileShare.ReadWrite)
+    using (var fs = new FileStream(PartPath(drive, userId.Value, uploadId), FileMode.Open, FileAccess.Write, FileShare.ReadWrite))
+    {
+        fs.Seek(offset, SeekOrigin.Begin);
         await chunk.CopyToAsync(fs);
-
-    meta.Done.Add(chunkIndex);
+    }
+    lock (meta.Done) meta.Done.Add(chunkIndex);   // 동시 요청이 같은 HashSet을 건드리므로 잠금
     return Results.Ok();
 }).DisableAntiforgery();
 
-// 청크 결합 완료
+// 청크 업로드 완료 — 빠진 조각이 없으면 이름만 바꿔 최종 파일로
 app.MapPost("/api/drive/upload/complete", async (HttpContext ctx, DriveService drive) =>
 {
     int? userId = DriveAuth(ctx, drive);
@@ -2273,44 +2289,25 @@ app.MapPost("/api/drive/upload/complete", async (HttpContext ctx, DriveService d
     string uploadId = json.RootElement.GetProperty("uploadId").GetString() ?? "";
 
     if (!_uploads.TryRemove(uploadId, out var meta)) return Results.BadRequest();
-    _uploadBytes.TryRemove(uploadId, out _);
+    _uploadChunk.TryRemove(uploadId, out _);
     if (meta.UserId != userId.Value) return Results.Forbid();
 
-    string tmpDir = Path.Combine("/mnt/ssd/drive", "_tmp", uploadId);
-    // 실제로 받은 크기 (브라우저가 신고한 값이 아니라 임시 청크 파일 크기 합)
-    long actualSize = 0;
-    for (int i = 0; i < meta.TotalChunks; i++)
-    {
-        var fi = new FileInfo(Path.Combine(tmpDir, i.ToString()));
-        if (!fi.Exists) { try { Directory.Delete(tmpDir, true); } catch { } return Results.BadRequest("빠진 청크가 있습니다."); }
-        actualSize += fi.Length;
-    }
-    meta.FileSize = actualSize;
-    string finalName = meta.FileName;
-    int fileId;
-    bool overwritten = false;
+    string part = PartPath(drive, userId.Value, uploadId);
+    void Drop() { try { File.Delete(part); } catch { } }
+    int received; lock (meta.Done) received = meta.Done.Count;
+    if (received != meta.TotalChunks || !File.Exists(part)) { Drop(); return Results.BadRequest("빠진 조각이 있습니다. 다시 올려 주세요."); }
 
-    // 덮어쓰기 모드: 기존 파일에 청크 결합
+    // 덮어쓰기 모드: 기존 파일 자리로 이름만 바꿈
+    string finalName = meta.FileName;
     if (meta.Mode == "overwrite")
     {
         int? dupId = drive.FindDuplicate(userId.Value, meta.FileName, meta.ParentId);
         if (dupId != null)
         {
             long oldSize = drive.GetFile(userId.Value, dupId.Value)?.FileSize ?? 0;
-            if (drive.WouldExceedQuota(userId.Value, meta.FileSize, oldSize))
-            { try { Directory.Delete(tmpDir, true); } catch { } return QuotaExceeded(); }
-            string oPath = drive.GetPhysicalPath(userId.Value, dupId.Value);
-            using (var outFs = new FileStream(oPath, FileMode.Create))
-            {
-                for (int i = 0; i < meta.TotalChunks; i++)
-                {
-                    string cp = Path.Combine(tmpDir, i.ToString());
-                    using var cfs = new FileStream(cp, FileMode.Open);
-                    await cfs.CopyToAsync(outFs);
-                }
-            }
+            if (drive.WouldExceedQuota(userId.Value, meta.FileSize, oldSize)) { Drop(); return QuotaExceeded(); }
+            File.Move(part, drive.GetPhysicalPath(userId.Value, dupId.Value), overwrite: true);
             drive.UpdateFileSize(userId.Value, dupId.Value, meta.FileSize);
-            try { Directory.Delete(tmpDir, true); } catch { }
             return Results.Json(new { id = dupId.Value, overwritten = true });
         }
     }
@@ -2319,27 +2316,16 @@ app.MapPost("/api/drive/upload/complete", async (HttpContext ctx, DriveService d
         finalName = drive.GetUniqueName(userId.Value, meta.FileName, meta.ParentId);
     }
 
-    // 용량 확인 후 DB 등록
-    if (drive.WouldExceedQuota(userId.Value, meta.FileSize))
-    { try { Directory.Delete(tmpDir, true); } catch { } return QuotaExceeded(); }
-    fileId = drive.RegisterFile(userId.Value, finalName, meta.FileSize, meta.ParentId);
-
-    // 청크 결합 → 최종 파일
-    string finalPath = drive.GetPhysicalPath(userId.Value, fileId);
-    Directory.CreateDirectory(Path.GetDirectoryName(finalPath)!);
-    using (var outFs = new FileStream(finalPath, FileMode.Create))
+    // 용량 확인 → DB 등록 → 이름 바꾸기 (실패하면 DB 기록도 지워 유령 파일이 남지 않게)
+    if (drive.WouldExceedQuota(userId.Value, meta.FileSize)) { Drop(); return QuotaExceeded(); }
+    int fileId = drive.RegisterFile(userId.Value, finalName, meta.FileSize, meta.ParentId);
+    try { File.Move(part, drive.GetPhysicalPath(userId.Value, fileId), overwrite: true); }
+    catch (Exception ex)
     {
-        for (int i = 0; i < meta.TotalChunks; i++)
-        {
-            string chunkPath = Path.Combine(tmpDir, i.ToString());
-            using var chunkFs = new FileStream(chunkPath, FileMode.Open);
-            await chunkFs.CopyToAsync(outFs);
-        }
+        drive.Delete(userId.Value, fileId); Drop();
+        Console.WriteLine("[Drive] 업로드 완료 처리 실패: " + ex);
+        return Results.Json(new { error = "업로드를 마무리하지 못했습니다." }, statusCode: 500);
     }
-
-    // 임시 청크 삭제
-    try { Directory.Delete(tmpDir, true); } catch { }
-
     return Results.Json(new { id = fileId, fileName = finalName });
 });
 
@@ -2703,30 +2689,20 @@ var _cleanupTimer = new System.Threading.Timer(_ =>
         }
     }
 
-    // 1시간 이상 미완료 청크 업로드 정리 (디스크 낭비 방지)
-    foreach (var key in _uploads.Keys.ToArray())
+    // 1시간 넘게 조각이 오지 않은 업로드 정리 (디스크 낭비 방지)
+    try
     {
-        string tmpDir = Path.Combine("/mnt/ssd/drive", "_tmp", key);
-        if (Directory.Exists(tmpDir))
+        var drv = app.Services.GetRequiredService<DriveService>();
+        foreach (var kv in _uploads.ToArray())
         {
-            try
-            {
-                var created = Directory.GetCreationTimeUtc(tmpDir);
-                if ((now - created).TotalHours > 1)
-                {
-                    (int UserId, string FileName, long FileSize, int TotalChunks, int? ParentId, string Mode, HashSet<int> Done) removed;
-                    _uploads.TryRemove(key, out removed);
-                    Directory.Delete(tmpDir, true);
-                }
-            }
-            catch { }
-        }
-        else
-        {
-            (int UserId, string FileName, long FileSize, int TotalChunks, int? ParentId, string Mode, HashSet<int> Done) removed;
-            _uploads.TryRemove(key, out removed);
+            string part = PartPath(drv, kv.Value.UserId, kv.Key);
+            if (File.Exists(part) && (now - File.GetLastWriteTimeUtc(part)).TotalHours <= 1) continue;
+            _uploads.TryRemove(kv.Key, out var _gone1);   // 타이머 인자 이름이 _ 라서 버림(_) 대신 변수로 받음
+            _uploadChunk.TryRemove(kv.Key, out var _gone2);
+            try { File.Delete(part); } catch { }
         }
     }
+    catch { }
 
     // 만료된 드라이브 세션 정리
     try { app.Services.GetRequiredService<DriveService>().CleanExpiredSessions(); } catch { }

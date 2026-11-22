@@ -1001,7 +1001,7 @@ async function uploadOne(file, listEl, parentId, mode) {
         return;
     }
     // 청크 업로드 (대용량 파일)
-    const sr=await fetch('/api/drive/upload/start',{method:'POST',headers:{...AUTH,'Content-Type':'application/json'},body:JSON.stringify({fileName:file.name,fileSize:fSize,totalChunks:chunks,parentId,mode:mode||''})});
+    const sr=await fetch('/api/drive/upload/start',{method:'POST',headers:{...AUTH,'Content-Type':'application/json'},body:JSON.stringify({fileName:file.name,fileSize:fSize,totalChunks:chunks,chunkSize:CHUNK,parentId,mode:mode||''})});
     if(!sr.ok){if(sr.status===413)_quotaHit=true;bar.style.background='#ef4444';statusEl.textContent=sr.status===413?'용량 초과':'실패';statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('start failed');}
     const{uploadId}=await sr.json();let next=0;let chunkFail=false;
     async function cw(){
