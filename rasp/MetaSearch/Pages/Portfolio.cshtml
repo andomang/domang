@@ -260,9 +260,8 @@
         .ad-left { left: calc(50% - 440px - 200px); }
         .ad-right { right: calc(50% - 440px - 200px); }
         .ad-side:empty { display: none !important; }
-        .ad-inline { margin: 32px 0 0; }
-        .ad-inline:empty { display: none; }
-        @@media (min-width: 1290px) { .ad-side { display: block; } .ad-inline { display: none; } }
+        /* 폭과 높이 둘 다 될 때만 (낮은 노트북 화면에서 600px 광고 아래가 잘리지 않게) */
+        @@media (min-width: 1290px) and (min-height: 760px) { .ad-side { display: block; } }
 
         /* ── 첫 등장: 이름이 아래에서 밀려 올라오고 목록이 차례로 (한 번만) ── */
         @@media (prefers-reduced-motion: no-preference) {
@@ -383,9 +382,6 @@
                     <a href="https://github.com/andomang/OTT/releases" class="open" target="_blank" rel="noopener" aria-label="OTT Multi-View GitHub에서 받기">받기</a>
                 </li>
             </ol>
-
-            <!-- 광고: 프로젝트 목록 아래 (좁은 화면만, 넓은 화면은 양옆 광고) -->
-            <div class="ad-inline"><partial name="_AdUnit" model='@("inline")' /></div>
 
             <!-- 운영 구조도: 실제로 어떻게 돌아가는지 (HTML로 그려서 좁은 화면에선 세로로 쌓임) -->
             <section class="ops" aria-labelledby="opsTitle">

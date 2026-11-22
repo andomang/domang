@@ -143,7 +143,7 @@ img { max-width: 100%; display: block; }
 .chrome i { display: flex; gap: 6px; }
 .chrome i b { width: 9px; height: 9px; border-radius: 50%; background: var(--rule); }
 .chrome span { font-variant-numeric: tabular-nums; }
-.frame img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top center; }
+.frame img { width: 100%; height: auto; aspect-ratio: 16 / 10; object-fit: cover; object-position: top center; }   /* height:auto — img의 height="600" 속성이 비율을 이겨 좌우가 잘리던 문제 */
 .frame img.pixel { image-rendering: pixelated; object-position: center; }
 .shot figcaption { margin-top: 12px; font-size: 13px; color: var(--ink-3); }
 
@@ -199,7 +199,8 @@ img { max-width: 100%; display: block; }
 .ad-left { left: calc(50% - 440px - 200px); }
 .ad-right { right: calc(50% - 440px - 200px); }
 .ad-side:empty { display: none !important; }
-@media (min-width: 1290px) { .ad-side { display: block; } }
+/* 폭(본문 880 + 양옆 200씩)과 높이(위 96px + 광고 600px + 여유) 둘 다 될 때만 — 낮은 노트북 화면에서 광고 아래가 잘리지 않게 */
+@media (min-width: 1290px) and (min-height: 760px) { .ad-side { display: block; } }
 
 .fine {
     border-top: 1px solid var(--rule); margin-top: 48px;

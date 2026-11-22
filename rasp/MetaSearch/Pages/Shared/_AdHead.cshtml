@@ -17,4 +17,11 @@
 {
     <meta name="google-adsense-account" content="@adClient" />
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=@adClient" crossorigin="anonymous"></script>
+    <!-- 광고가 채워지지 않으면(unfilled) 빈 칸과 그 칸을 감싼 여백·구분선까지 숨김 -->
+    <style>
+        ins.adsbygoogle[data-ad-status="unfilled"] { display: none !important; }
+        .ad-inline:has(ins.adsbygoogle[data-ad-status="unfilled"]),
+        .ad-mid:has(ins.adsbygoogle[data-ad-status="unfilled"]),
+        .ad-side:has(ins.adsbygoogle[data-ad-status="unfilled"]) { display: none !important; }
+    </style>
 }
