@@ -2785,5 +2785,7 @@ var _cleanupTimer = new System.Threading.Timer(_ =>
     try { app.Services.GetRequiredService<DriveService>().CleanExpiredSessions(); } catch { }
 }, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
 
-// Kestrel 포트 설정 (Nginx 리버스 프록시 대상)
-app.Run("http://0.0.0.0:5000");
+// Kestrel 포트 설정: 같은 기계의 Cloudflare 터널(cloudflared)만 접속 → 라즈베리파이 안(127.0.0.1)에서만 열기
+//   예전엔 Nginx 앞단 시절 설정(0.0.0.0)이라 집 안 랜 기기도 암호화 없이 바로 들어오고,
+//   X-Forwarded-For 를 위조해 IP 기반 제한(로그인 시도 제한 등)을 피할 수 있었음
+app.Run("http://127.0.0.1:5000");
