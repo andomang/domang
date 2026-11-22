@@ -13,9 +13,12 @@ public class SignInModel : PageModel
     public string? UserId { get; private set; }
     public string UserName { get; private set; } = "";
     public string ReturnUrl { get; private set; } = "/";
+    // 처음 보여 줄 화면: login(기본) / register / find  → /signin?view=register 로 회원가입부터 열 수 있음
+    public string View { get; private set; } = "login";
 
-    public void OnGet(string? returnUrl)
+    public void OnGet(string? returnUrl, string? view)
     {
+        if (view == "register" || view == "find") View = view;
         UserId = HttpContext.Session.GetString("UserID");
         UserName = HttpContext.Session.GetString("UserName") ?? UserId ?? "";
         // 열린 리다이렉트 방지: 같은 사이트 경로(/로 시작, //·\ 제외)만 허용

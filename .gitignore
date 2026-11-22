@@ -20,3 +20,10 @@ obj/
 rasp/publish/
 .deploy-hashes
 rasp/MetaSearch/wwwroot/pokemon/
+
+# 라즈베리파이 접속 정보(내부 IP·SSH 사용자)가 들어 있는 개인 운영 스크립트 — 내 PC에만 둠
+rasp/deploy.sh
+rasp/db_backup.bat
+rasp/db_check.bat
+rasp/site_check.bat
+rasp/ssh_connect.bat

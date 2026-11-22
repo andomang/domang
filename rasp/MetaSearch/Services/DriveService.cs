@@ -77,6 +77,8 @@ public class DriveService
         // 휴지통 관련 컬럼
         conn.Execute("ALTER TABLE drive_files ADD COLUMN IF NOT EXISTS is_trashed BOOLEAN DEFAULT FALSE");
         conn.Execute("ALTER TABLE drive_files ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMP");
+        // 통합 계정 연결: 회원 아이디당 드라이브 계정 하나 (GetOrCreateUserForMember의 ON CONFLICT에 필요)
+        conn.Execute("CREATE UNIQUE INDEX IF NOT EXISTS drive_users_username_uq ON drive_users (username)");
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -102,40 +104,7 @@ public class DriveService
         return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
     }
 
-    /// <summary>앱 시작 시 기본 계정 자동 생성 (없으면)</summary>
-    public void EnsureDefaultUser(string username, string password)
-    {
-        using var conn = _db.OpenConnection();
-        var exists = conn.QueryFirstOrDefault<int?>(
-            "SELECT id FROM drive_users WHERE username = @username", new { username });
-        if (exists != null) return;
-
-        string hash = HashPassword(password);
-        conn.Execute(
-            "INSERT INTO drive_users (username, password_hash) VALUES (@username, @hash)",
-            new { username, hash });
-    }
-
-    /// <summary>로그인 — 성공 시 세션 토큰 반환, 실패 시 null</summary>
-    public string? Login(string username, string password)
-    {
-        using var conn = _db.OpenConnection();
-        var user = conn.QueryFirstOrDefault<(int Id, string Hash)>(
-            "SELECT id, password_hash AS Hash FROM drive_users WHERE username = @username",
-            new { username });
-
-        if (user.Id == 0 || !VerifyPassword(password, user.Hash)) return null;
-
-        string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLower();
-
-        conn.Execute("DELETE FROM drive_sessions WHERE expires_at < NOW()");
-        conn.Execute(
-            @"INSERT INTO drive_sessions (token, user_id, expires_at)
-              VALUES (@token, @userId, NOW() + INTERVAL '7 days')",
-            new { token, userId = user.Id });
-
-        return token;
-    }
+    // (예전 드라이브 전용 아이디·비밀번호 로그인은 없앰 — domang 통합 계정 SSO만 사용: GetOrCreateUserForMember + IssueToken)
 
     /// <summary>토큰으로 사용자 인증 — 유효하면 userId 반환 (형식 검증 포함)</summary>
     public int? ValidateToken(string? token)
@@ -474,6 +443,110 @@ public class DriveService
               VALUES (@userId, @newName, @fileSize, FALSE, @parentId) RETURNING id",
             new { userId, newName, fileSize = item.FileSize, parentId = item.ParentId });
     }
+
+    // ═══════════════════════════════════════════════════════════════
+    // domang 통합 계정 연결 · 회원별 용량 · 관리자 열람
+    // 드라이브 계정(drive_users.username)은 사이트 회원 아이디(members.userid)와 같은 값으로 연결
+    // ═══════════════════════════════════════════════════════════════
+
+    /// <summary>일반 회원 1명당 드라이브 용량 (3GB). 관리자는 무제한</summary>
+    public const long MEMBER_QUOTA = 3L * 1024 * 1024 * 1024;
+
+    /// <summary>사이트 회원의 드라이브 계정을 찾고, 없으면 만듦 (기존 가입자도 처음 들어올 때 자동 생성 → 3GB 지급)</summary>
+    public int GetOrCreateUserForMember(string memberId)
+    {
+        using var conn = _db.OpenConnection();
+        var id = conn.QueryFirstOrDefault<int?>(
+            "SELECT id FROM drive_users WHERE username = @memberId", new { memberId });
+        if (id != null) return id.Value;
+        // 비밀번호 로그인은 쓰지 않으므로 검증이 항상 실패하는 값('!')을 넣음 (':' 구분자가 없어 VerifyPassword가 false)
+        // ON CONFLICT: 같은 회원이 동시에 두 번 들어와도 계정이 하나만 생기게
+        return conn.QuerySingle<int>(
+            @"INSERT INTO drive_users (username, password_hash) VALUES (@memberId, '!')
+              ON CONFLICT (username) DO UPDATE SET username = EXCLUDED.username RETURNING id",
+            new { memberId });
+    }
+
+    /// <summary>세션 토큰 발급 (7일) — 통합 로그인(SSO)에서 사용</summary>
+    public string IssueToken(int userId)
+    {
+        string token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLower();
+        using var conn = _db.OpenConnection();
+        conn.Execute("DELETE FROM drive_sessions WHERE expires_at < NOW()");
+        conn.Execute(
+            "INSERT INTO drive_sessions (token, user_id, expires_at) VALUES (@token, @userId, NOW() + INTERVAL '7 days')",
+            new { token, userId });
+        return token;
+    }
+
+    /// <summary>토큰 검증 + 그 토큰이 지금 로그인한 사이트 회원의 것인지까지 확인 (한 번의 쿼리)
+    /// → 같은 PC에서 다른 사람이 사이트에 로그인하면 이전 사람의 드라이브 토큰은 쓸 수 없음</summary>
+    public int? ValidateTokenFor(string? token, string? memberId)
+    {
+        if (string.IsNullOrEmpty(token) || string.IsNullOrEmpty(memberId)) return null;
+        if (token.Length != 64 || !System.Text.RegularExpressions.Regex.IsMatch(token, "^[0-9a-fA-F]{64}$")) return null;
+        using var conn = _db.OpenConnection();
+        return conn.QueryFirstOrDefault<int?>(
+            @"SELECT s.user_id FROM drive_sessions s JOIN drive_users d ON d.id = s.user_id
+              WHERE s.token = @token AND s.expires_at > NOW() AND d.username = @memberId",
+            new { token, memberId });
+    }
+
+    /// <summary>이 드라이브 계정이 사이트 관리자(members.isadmin = 1)인지</summary>
+    public bool IsAdmin(int userId)
+    {
+        using var conn = _db.OpenConnection();
+        return conn.QueryFirstOrDefault<int?>(
+            "SELECT m.isadmin FROM drive_users d JOIN members m ON TRIM(m.userid) = d.username WHERE d.id = @userId",
+            new { userId }) == 1;
+    }
+
+    /// <summary>용량 한도 (바이트). 관리자는 null = 무제한</summary>
+    public long? GetQuota(int userId) => IsAdmin(userId) ? null : MEMBER_QUOTA;
+
+    /// <summary>용량 계산용 사용량 — 휴지통 파일도 디스크를 차지하므로 포함</summary>
+    public long GetQuotaUsage(int userId)
+    {
+        using var conn = _db.OpenConnection();
+        return conn.QueryFirstOrDefault<long>(
+            "SELECT COALESCE(SUM(file_size), 0) FROM drive_files WHERE user_id = @userId AND is_folder = FALSE",
+            new { userId });
+    }
+
+    /// <summary>addBytes만큼 더 저장하면 한도를 넘는지 (덮어쓰기는 freedBytes만큼 빠지는 것을 반영)</summary>
+    // shortcut: 동시에 올린 파일 몇 개가 함께 검사를 통과하면 한도를 조금 넘을 수 있음 — 남용되면 회원별 잠금으로 바꿀 것
+    public bool WouldExceedQuota(int userId, long addBytes, long freedBytes = 0)
+    {
+        long? quota = GetQuota(userId);
+        return quota != null && GetQuotaUsage(userId) - freedBytes + addBytes > quota.Value;
+    }
+
+    /// <summary>관리자용: 드라이브 계정 전체와 사용량·파일 수 (사용량 많은 순)</summary>
+    public IEnumerable<DriveUserRow> ListUsersWithUsage()
+    {
+        using var conn = _db.OpenConnection();
+        return conn.Query<DriveUserRow>(
+            @"SELECT d.id AS Id, d.username AS Username, COALESCE(TRIM(m.nickname), '') AS Nickname,
+                     COALESCE(SUM(f.file_size) FILTER (WHERE f.is_folder = FALSE), 0) AS Usage,
+                     COUNT(f.id) FILTER (WHERE f.is_folder = FALSE) AS Files,
+                     COALESCE(m.isadmin, 0) = 1 AS IsAdmin
+              FROM drive_users d
+              LEFT JOIN members m ON TRIM(m.userid) = d.username
+              LEFT JOIN drive_files f ON f.user_id = d.id
+              GROUP BY d.id, d.username, m.nickname, m.isadmin
+              ORDER BY Usage DESC, d.username").ToList();
+    }
+}
+
+/// <summary>관리자 화면용 드라이브 계정 요약</summary>
+public class DriveUserRow
+{
+    public int Id { get; set; }
+    public string Username { get; set; } = "";
+    public string Nickname { get; set; } = "";
+    public long Usage { get; set; }
+    public long Files { get; set; }
+    public bool IsAdmin { get; set; }
 }
 
 /// <summary>드라이브 파일/폴더 DTO</summary>

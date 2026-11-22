@@ -181,11 +181,10 @@
         .stack { grid-column: 2 / 4; font-size: 13px; color: var(--ink-3); }
         .stack span + span::before { content: "/"; margin: 0 8px; opacity: .5; }
         .thumb { display: none; }
-        /* '열기' 버튼: 소개 페이지를 거치지 않고 바로 서비스로 (이용자용). 줄 링크 위에 겹쳐 오른쪽 위에 둠 */
-        .row { position: relative; }
-        .row > a:first-child { padding-right: 84px; }
+        /* '열기' 버튼: 소개 페이지를 거치지 않고 바로 서비스로 (이용자용)
+           줄을 [링크 | 버튼] 두 칸으로 나누고 첫 줄 글자 기준선(baseline)에 맞춰 '운영 중 2026 →' 바로 옆에 놓음 */
+        .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 10px; }
         .row .open {
-            position: absolute; top: 24px; right: 4px; z-index: 2;
             display: inline-flex; align-items: center; height: 30px; padding: 0 14px; border-radius: 999px;
             border: 1px solid var(--ink); font-size: 13px; font-weight: 700; color: var(--ink); background: var(--paper);
             transition: background-color .2s ease, color .2s ease, border-color .2s ease;
@@ -279,8 +278,7 @@
         @@media (max-width: 640px) {
             .wrap { padding-inline: 16px; }
             .row a { grid-template-columns: 2.2rem 1fr auto; column-gap: 10px; padding: 22px 0; }
-            .row > a:first-child { padding-right: 64px; }
-            .row .open { top: 20px; right: 0; }
+            .row { column-gap: 6px; }
             .meta .year { display: none; }
             .desc, .stack { grid-column: 2 / 4; }
             .thumb { display: block; grid-column: 2 / 4; margin-top: 8px; border-radius: 8px; overflow: hidden; border: 1px solid var(--rule); aspect-ratio: 16 / 9; }
@@ -297,6 +295,8 @@
             .out .node { grid-column: 1; }
         }
     </style>
+    <!-- 통합 계정 창 (로그인·회원가입·계정 찾기) -->
+    <link rel="stylesheet" href="/css/auth.css" asp-append-version="true" />
     <!-- 구글 애드센스 (설정에 게시자 ID가 있을 때만, 제외 경로 제외) -->
     <partial name="_AdHead" />
 </head>
@@ -316,7 +316,7 @@
                     <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" /></svg>
                 </button>
                 <!-- 로그인 상태 (휴대폰에서도 여기서 로그인 → 게임 기록이 계정에 저장됨) -->
-                <div class="auth-bar" id="authBar"><a href="/signin?returnUrl=/" class="auth-btn">로그인</a></div>
+                <div class="auth-bar" id="authBar"><a href="/signin?returnUrl=/" class="auth-btn" data-auth="login">로그인</a></div>
             </div>
         </header>
 
@@ -437,6 +437,7 @@
 
     <!-- 다크 모드 버튼 (소개 페이지들과 같은 파일) -->
     <script src="/js/theme.js" asp-append-version="true"></script>
+    <script src="/js/auth.js" asp-append-version="true"></script>
     <script>
         // ── 운영 구조도: 화면에 처음 들어올 때 한 번만 요청 흐름 연출 (선·글자는 처음부터 다 보임) ──
         (function () {

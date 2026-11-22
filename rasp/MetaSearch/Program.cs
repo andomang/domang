@@ -133,7 +133,6 @@ _ = Task.Run(async () =>
         try
         {
             drv.EnsureSchema();
-            drv.EnsureDefaultUser("dksehvkf1206", "***REMOVED***");
             Console.WriteLine("[Drive] 스키마 마이그레이션 완료 (시도 " + (attempt + 1) + ")");
             return;
         }
@@ -1351,6 +1350,36 @@ app.MapGet("/api/register/check-email", (HttpContext ctx, DbService db) =>
     return Results.Json(new { result = exists == null ? "ok" : "duplicate" });
 });
 
+// 회원가입 (로그인 모달용 JSON API) — 성공하면 바로 로그인 상태로 만듦
+app.MapPost("/api/account/register", async (HttpContext ctx, MemberDao dao, DbService db) =>
+{
+    // 가입 남용 방지: IP당 1시간에 5회
+    string ip = GetRealIp(ctx);
+    if (IsRateLimited("register:" + (string.IsNullOrEmpty(ip) ? "unknown" : ip), 5, 3600))
+        return Results.Json(new { ok = false, error = "가입 시도가 너무 많습니다. 잠시 후 다시 시도해주세요." });
+
+    System.Text.Json.JsonElement body;
+    try { body = await System.Text.Json.JsonSerializer.DeserializeAsync<System.Text.Json.JsonElement>(ctx.Request.Body); }
+    catch (System.Text.Json.JsonException) { return Results.BadRequest(); }
+    string S(string k) => body.TryGetProperty(k, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    var input = new MetaSearch.Models.MemberDo
+    {
+        Userid = S("userid"), Passwd = S("passwd"), Name = S("name"), Nickname = S("nickname"), Email = S("email")
+    };
+    string? err = MetaSearch.Pages.RegisterModel.Validate(input, S("passwdConfirm"), ctx.Session.GetString("EmailVerified"), db, "모든 항목을 입력해주세요.");
+    if (err != null) return Results.Json(new { ok = false, error = err });
+
+    if (dao.RegisterUser(input) == -1)
+        return Results.Json(new { ok = false, error = "이미 사용 중인 아이디입니다." });
+
+    // 인증 기록은 한 번만 쓰고, 가입한 계정으로 바로 로그인
+    ctx.Session.Remove("EmailVerified");
+    ctx.Session.SetString("UserID", input.Userid);
+    ctx.Session.SetString("UserName", input.Nickname);
+    return Results.Json(new { ok = true, userId = input.Userid, nick = input.Nickname });
+});
+
 // ── 이메일 인증 API ──────────────────────────────────────────────────────
 
 // 인증코드 발송 (Brevo API) — 이메일 중복도 사전 체크 + 레이트 리미팅
@@ -1921,8 +1950,19 @@ int? DriveAuth(HttpContext ctx, DriveService drive)
     EnsureDriveSchema(drive);
     string? auth = ctx.Request.Headers["Authorization"].FirstOrDefault();
     if (auth == null || !auth.StartsWith("Bearer ")) return null;
-    return drive.ValidateToken(auth[7..]);
+    // 토큰 주인이 지금 사이트에 로그인한 회원과 같아야 함 (공용 PC에서 남의 드라이브가 열리는 것 방지)
+    return drive.ValidateTokenFor(auth[7..], ctx.Session.GetString("UserID"));
 }
+
+// 관리자 전용: 드라이브 토큰이 사이트 관리자(members.isadmin = 1) 것일 때만 통과
+int? DriveAdminAuth(HttpContext ctx, DriveService drive)
+{
+    int? u = DriveAuth(ctx, drive);
+    return u != null && drive.IsAdmin(u.Value) ? u : null;
+}
+
+// 용량 초과 응답 (화면에서 '용량 초과'로 표시)
+IResult QuotaExceeded() => Results.Json(new { error = "quota", message = "드라이브 용량(3GB)을 넘어 저장할 수 없습니다." }, statusCode: 413);
 
 // 드라이브 진단 엔드포인트 — 문제 발생 시 환경/DB 상태 확인용
 app.MapGet("/api/drive/diag", (HttpContext ctx, DriveService drive, DbService db) =>
@@ -1978,28 +2018,16 @@ app.MapGet("/api/drive/diag", (HttpContext ctx, DriveService drive, DbService db
     return Results.Json(info);
 });
 
-// 로그인 — 브루트포스 방지 레이트리밋 적용
-app.MapPost("/api/drive/login", async (HttpContext ctx, DriveService drive) =>
+// 통합 로그인(SSO) — domang 사이트에 로그인한 세션이면 그 회원의 드라이브 토큰을 발급
+// 드라이브 계정이 없으면 이때 만들어짐 (기존 가입자도 처음 들어올 때 3GB 공간이 생김)
+app.MapPost("/api/drive/sso", (HttpContext ctx, DriveService drive) =>
 {
-    // IP당 1분 5회 로그인 시도 제한 (브루트포스 공격 차단)
-    string ip = GetRealIp(ctx);
-    if (string.IsNullOrEmpty(ip)) ip = "unknown";
-    if (IsRateLimited($"drive-login:{ip}", 5, 60))
-        return Results.Json(new { error = "너무 많은 로그인 시도입니다. 1분 후 다시 시도해주세요." }, statusCode: 429);
-
-    using var reader = new StreamReader(ctx.Request.Body);
-    var json = System.Text.Json.JsonDocument.Parse(await reader.ReadToEndAsync());
-    string username = json.RootElement.GetProperty("username").GetString() ?? "";
-    string password = json.RootElement.GetProperty("password").GetString() ?? "";
-
-    // 입력 길이 제한 (과도한 해싱 연산 방지)
-    if (username.Length > 50 || password.Length > 128)
-        return Results.Json(new { error = "아이디 또는 비밀번호가 올바르지 않습니다." }, statusCode: 401);
-
-    string? token = drive.Login(username, password);
-    if (token == null) return Results.Json(new { error = "아이디 또는 비밀번호가 올바르지 않습니다." }, statusCode: 401);
-
-    return Results.Json(new { token });
+    EnsureDriveSchema(drive);
+    ctx.Response.Headers.CacheControl = "no-store";
+    string? uid = ctx.Session.GetString("UserID");
+    if (uid == null) return Results.Json(new { error = "login_required" }, statusCode: 401);
+    int driveUser = drive.GetOrCreateUserForMember(uid);
+    return Results.Json(new { token = drive.IssueToken(driveUser) });
 });
 
 // 로그아웃
@@ -2016,7 +2044,7 @@ app.MapGet("/api/drive/me", (HttpContext ctx, DriveService drive) =>
     int? userId = DriveAuth(ctx, drive);
     if (userId == null) return Results.Unauthorized();
     string? username = drive.GetUsername(userId.Value);
-    return Results.Json(new { userId, username });
+    return Results.Json(new { userId, username, isAdmin = drive.IsAdmin(userId.Value), quota = drive.GetQuota(userId.Value) });
 });
 
 // 사용량 조회
@@ -2036,7 +2064,8 @@ app.MapGet("/api/drive/usage", (HttpContext ctx, DriveService drive) =>
     }
     catch { }
 
-    return Results.Json(new { usage, total, free });
+    // quota: 회원은 3GB, 관리자는 null(무제한) / quotaUsed: 휴지통까지 포함한 사용량
+    return Results.Json(new { usage, total, free, quota = drive.GetQuota(userId.Value), quotaUsed = drive.GetQuotaUsage(userId.Value) });
 });
 
 // 파일/폴더 목록
@@ -2066,8 +2095,9 @@ app.MapGet("/api/drive/list", (HttpContext ctx, DriveService drive) =>
     }
     catch (Exception ex)
     {
-        // 에러 상세 반환 — 디버깅용 (개인 서버라 보안 리스크 낮음)
-        return Results.Json(new { error = ex.Message, stack = ex.StackTrace }, statusCode: 500);
+        // 상세 오류는 서버 로그에만 남기고, 화면에는 일반 문구만 (내부 구조 노출 방지)
+        Console.WriteLine("[Drive] 목록 조회 실패: " + ex);
+        return Results.Json(new { error = "목록을 불러오지 못했습니다." }, statusCode: 500);
     }
 });
 
@@ -2134,6 +2164,8 @@ app.MapPost("/api/drive/upload", async (HttpContext ctx, DriveService drive) =>
             int? dupId = drive.FindDuplicate(userId.Value, finalName, parentId);
             if (dupId != null)
             {
+                long oldSize = drive.GetFile(userId.Value, dupId.Value)?.FileSize ?? 0;
+                if (drive.WouldExceedQuota(userId.Value, file.Length, oldSize)) return QuotaExceeded();
                 string oPath = drive.GetPhysicalPath(userId.Value, dupId.Value);
                 Directory.CreateDirectory(Path.GetDirectoryName(oPath)!);
                 using var s = new FileStream(oPath, FileMode.Create);
@@ -2147,6 +2179,7 @@ app.MapPost("/api/drive/upload", async (HttpContext ctx, DriveService drive) =>
             finalName = drive.GetUniqueName(userId.Value, finalName, parentId);
         }
 
+        if (drive.WouldExceedQuota(userId.Value, file.Length)) return QuotaExceeded();
         int fileId = drive.RegisterFile(userId.Value, finalName, file.Length, parentId);
         string path = drive.GetPhysicalPath(userId.Value, fileId);
         // 사용자 저장 디렉토리 자동 생성 (첫 업로드 시 필요)
@@ -2158,13 +2191,16 @@ app.MapPost("/api/drive/upload", async (HttpContext ctx, DriveService drive) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { error = ex.Message, stack = ex.StackTrace }, statusCode: 500);
+        Console.WriteLine("[Drive] 업로드 실패: " + ex);
+        return Results.Json(new { error = "업로드 중 오류가 발생했습니다." }, statusCode: 500);
     }
 }).DisableAntiforgery();
 
 // ── 청크 업로드 (대용량 파일) ──────────────────────────────────
 // 임시 청크 저장소: uploadId → 메타데이터
 var _uploads = new System.Collections.Concurrent.ConcurrentDictionary<string, (int UserId, string FileName, long FileSize, int TotalChunks, int? ParentId, string Mode, HashSet<int> Done)>();
+// uploadId → 지금까지 받은 청크 바이트 합 (신고한 크기보다 많이 보내 용량 한도를 우회하는 것 차단)
+var _uploadBytes = new System.Collections.Concurrent.ConcurrentDictionary<string, long>();
 
 // 업로드 시작 — uploadId 발급
 app.MapPost("/api/drive/upload/start", async (HttpContext ctx, DriveService drive) =>
@@ -2186,6 +2222,8 @@ app.MapPost("/api/drive/upload/start", async (HttpContext ctx, DriveService driv
         return Results.BadRequest("잘못된 업로드 파라미터");
     // 파일명 보안 정리
     fileName = DriveService.SanitizeFileName(fileName);
+    // 용량 한도 확인 (실제 크기는 완료 단계에서 다시 확인)
+    if (drive.WouldExceedQuota(userId.Value, fileSize)) return QuotaExceeded();
 
     string uploadId = Guid.NewGuid().ToString("N");
     _uploads[uploadId] = (userId.Value, fileName, fileSize, totalChunks, parentId, mode, new HashSet<int>());
@@ -2209,6 +2247,9 @@ app.MapPost("/api/drive/upload/chunk", async (HttpContext ctx, DriveService driv
     if (meta.UserId != userId.Value) return Results.Forbid();
     // 청크 인덱스 범위 검증 (버퍼 오버플로/경로 조작 방지)
     if (chunkIndex < 0 || chunkIndex >= meta.TotalChunks) return Results.BadRequest("청크 인덱스 범위 초과");
+    // 신고한 파일 크기보다 많이 받으면 거절 (용량 우회·디스크 채우기 방지)
+    if (_uploadBytes.AddOrUpdate(uploadId, chunk.Length, (_, sum) => sum + chunk.Length) > meta.FileSize)
+        return QuotaExceeded();
 
     // 청크를 임시 파일로 저장
     string tmpDir = Path.Combine("/mnt/ssd/drive", "_tmp", uploadId);
@@ -2232,9 +2273,19 @@ app.MapPost("/api/drive/upload/complete", async (HttpContext ctx, DriveService d
     string uploadId = json.RootElement.GetProperty("uploadId").GetString() ?? "";
 
     if (!_uploads.TryRemove(uploadId, out var meta)) return Results.BadRequest();
+    _uploadBytes.TryRemove(uploadId, out _);
     if (meta.UserId != userId.Value) return Results.Forbid();
 
     string tmpDir = Path.Combine("/mnt/ssd/drive", "_tmp", uploadId);
+    // 실제로 받은 크기 (브라우저가 신고한 값이 아니라 임시 청크 파일 크기 합)
+    long actualSize = 0;
+    for (int i = 0; i < meta.TotalChunks; i++)
+    {
+        var fi = new FileInfo(Path.Combine(tmpDir, i.ToString()));
+        if (!fi.Exists) { try { Directory.Delete(tmpDir, true); } catch { } return Results.BadRequest("빠진 청크가 있습니다."); }
+        actualSize += fi.Length;
+    }
+    meta.FileSize = actualSize;
     string finalName = meta.FileName;
     int fileId;
     bool overwritten = false;
@@ -2245,6 +2296,9 @@ app.MapPost("/api/drive/upload/complete", async (HttpContext ctx, DriveService d
         int? dupId = drive.FindDuplicate(userId.Value, meta.FileName, meta.ParentId);
         if (dupId != null)
         {
+            long oldSize = drive.GetFile(userId.Value, dupId.Value)?.FileSize ?? 0;
+            if (drive.WouldExceedQuota(userId.Value, meta.FileSize, oldSize))
+            { try { Directory.Delete(tmpDir, true); } catch { } return QuotaExceeded(); }
             string oPath = drive.GetPhysicalPath(userId.Value, dupId.Value);
             using (var outFs = new FileStream(oPath, FileMode.Create))
             {
@@ -2265,7 +2319,9 @@ app.MapPost("/api/drive/upload/complete", async (HttpContext ctx, DriveService d
         finalName = drive.GetUniqueName(userId.Value, meta.FileName, meta.ParentId);
     }
 
-    // DB 등록
+    // 용량 확인 후 DB 등록
+    if (drive.WouldExceedQuota(userId.Value, meta.FileSize))
+    { try { Directory.Delete(tmpDir, true); } catch { } return QuotaExceeded(); }
     fileId = drive.RegisterFile(userId.Value, finalName, meta.FileSize, meta.ParentId);
 
     // 청크 결합 → 최종 파일
@@ -2295,7 +2351,7 @@ app.MapGet("/api/drive/download/{id:int}", (int id, HttpContext ctx, DriveServic
     if (userId == null)
     {
         string? token = ctx.Request.Query["token"].FirstOrDefault();
-        userId = drive.ValidateToken(token);
+        userId = drive.ValidateTokenFor(token, ctx.Session.GetString("UserID"));
     }
     if (userId == null) return Results.Unauthorized();
 
@@ -2524,6 +2580,8 @@ app.MapPost("/api/drive/copy", async (HttpContext ctx, DriveService drive) =>
     using var reader = new StreamReader(ctx.Request.Body);
     var json = System.Text.Json.JsonDocument.Parse(await reader.ReadToEndAsync());
     int fileId = json.RootElement.GetProperty("id").GetInt32();
+    var srcItem = drive.GetFile(userId.Value, fileId);
+    if (srcItem != null && drive.WouldExceedQuota(userId.Value, srcItem.FileSize)) return QuotaExceeded();
 
     int? newId = drive.CopyFile(userId.Value, fileId);
     if (newId == null) return Results.BadRequest();
@@ -2534,6 +2592,64 @@ app.MapPost("/api/drive/copy", async (HttpContext ctx, DriveService drive) =>
     try { if (File.Exists(src)) File.Copy(src, dst); } catch { }
 
     return Results.Json(new { id = newId });
+});
+
+// ── 드라이브 관리자 API (사이트 관리자만) ──────────────────────────
+// 운영·안전(불법 파일 대응)을 위해 회원 드라이브를 열람·삭제. 개인정보처리방침에 고지함
+
+// 회원별 사용량 목록
+app.MapGet("/api/drive/admin/users", (HttpContext ctx, DriveService drive) =>
+{
+    if (DriveAdminAuth(ctx, drive) == null) return Results.Unauthorized();
+    return Results.Json(new { users = drive.ListUsersWithUsage(), quota = DriveService.MEMBER_QUOTA });
+});
+
+// 회원 드라이브의 폴더 내용
+app.MapGet("/api/drive/admin/list", (HttpContext ctx, DriveService drive) =>
+{
+    if (DriveAdminAuth(ctx, drive) == null) return Results.Unauthorized();
+    if (!int.TryParse(ctx.Request.Query["user"], out int target)) return Results.BadRequest();
+    int? folder = int.TryParse(ctx.Request.Query["folder"], out int f) ? f : null;
+    return Results.Json(new
+    {
+        username = drive.GetUsername(target),
+        files = drive.ListFiles(target, folder),
+        breadcrumb = drive.GetBreadcrumb(target, folder).Select(b => new { id = b.Id, name = b.Name })
+    });
+});
+
+// 회원 파일 내려받기 (새 탭 링크용으로 쿼리 토큰도 허용, 역시 관리자 본인 세션이어야 함)
+app.MapGet("/api/drive/admin/download/{user:int}/{id:int}", (int user, int id, HttpContext ctx, DriveService drive) =>
+{
+    int? admin = DriveAdminAuth(ctx, drive);
+    if (admin == null)
+    {
+        int? u = drive.ValidateTokenFor(ctx.Request.Query["token"].FirstOrDefault(), ctx.Session.GetString("UserID"));
+        admin = u != null && drive.IsAdmin(u.Value) ? u : null;
+    }
+    if (admin == null) return Results.Unauthorized();
+    var file = drive.GetFile(user, id);
+    if (file == null || file.IsFolder) return Results.NotFound();
+    string path = drive.GetPhysicalPath(user, id);
+    if (!File.Exists(path)) return Results.NotFound();
+    return Results.File(path, "application/octet-stream", file.FileName);   // 관리자 화면에선 미리보기 없이 내려받기만 (XSS 방지)
+});
+
+// 회원 파일·폴더 삭제 (휴지통을 거치지 않고 바로 삭제)
+app.MapDelete("/api/drive/admin/delete/{user:int}/{id:int}", (int user, int id, HttpContext ctx, DriveService drive) =>
+{
+    if (DriveAdminAuth(ctx, drive) == null) return Results.Unauthorized();
+    var item = drive.GetFile(user, id);
+    if (item == null) return Results.NotFound();
+    var ids = item.IsFolder ? drive.GetAllFileIdsInFolder(user, id) : new[] { id };
+    foreach (int cid in ids)
+    {
+        string cpath = drive.GetPhysicalPath(user, cid);
+        try { if (File.Exists(cpath)) File.Delete(cpath); } catch { }
+    }
+    drive.Delete(user, id);
+    Console.WriteLine($"[Drive] 관리자 삭제: user={user} id={id} name={item.FileName}");
+    return Results.Ok();
 });
 
 // MIME 타입 매핑 헬퍼

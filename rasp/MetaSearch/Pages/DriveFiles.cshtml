@@ -160,6 +160,7 @@
             <div class="flex items-center gap-1 text-sm" style="color:var(--fg2)">
                 <i data-lucide="user" class="w-3.5 h-3.5"></i>
                 <span id="userName" class="hidden sm:inline"></span>
+                <a id="adminLink" href="/drive/admin" class="hidden text-xs px-2 py-1 rounded-lg border" style="border-color:var(--border,#e5e7eb)">회원 드라이브 관리</a>
             </div>
             <button onclick="logout()" class="p-1.5 rounded-lg transition" style="color:var(--fg3)" title="로그아웃">
                 <i data-lucide="log-out" class="w-4 h-4"></i>
@@ -426,6 +427,7 @@ document.getElementById('sortSelect').value = sortBy;
     if (!res.ok) { localStorage.removeItem('driveToken'); location.href = '/drive'; return; }
     const me = await res.json();
     document.getElementById('userName').textContent = me.username;
+    if (me.isAdmin) document.getElementById('adminLink').classList.remove('hidden');   // 사이트 관리자만
     await loadView();
     await loadUsage();
 })();
@@ -833,6 +835,7 @@ async function handleFolderDrop(items) {
 const CHUNK=20*1024*1024, MAX_PAR=3;
 // 전역 업로드 진행 추적
 let _uploadActive=0, _uploadDone=0, _uploadFail=0;
+let _quotaHit=false;   // 이번 업로드 중 용량(3GB) 초과로 거절된 파일이 있었는지
 let _uploadTotalBytes=0, _uploadSentBytes=0, _uploadStartTime=0;
 function _formatEta(sec){
     if(!isFinite(sec)||sec<0) return '';
@@ -857,7 +860,7 @@ function _updateUploadCount(){
         document.getElementById('uploadEta').textContent = '계산 중...';
     }
 }
-function _resetUploadStats(){ _uploadActive=0;_uploadDone=0;_uploadFail=0;_uploadTotalBytes=0;_uploadSentBytes=0;_uploadStartTime=0; }
+function _resetUploadStats(){ _quotaHit=false; _uploadActive=0;_uploadDone=0;_uploadFail=0;_uploadTotalBytes=0;_uploadSentBytes=0;_uploadStartTime=0; }
 // 업로드 중 새로고침/탭닫기 방지
 window.addEventListener('beforeunload', e=>{
     if(_uploadActive>0 && (_uploadDone+_uploadFail)<_uploadActive){
@@ -922,6 +925,7 @@ async function handleFileSelect(files) {
     if (uploaded > 0 && failed === 0) toast(uploaded + '개 업로드 완료', 'success');
     else if (uploaded > 0) toast(uploaded + '개 완료, ' + failed + '개 실패', 'warning');
     else if (failed > 0) toast(failed + '개 업로드 실패', 'error');
+    if (_quotaHit) toast('드라이브 용량(3GB)이 부족해 일부 파일을 올리지 못했습니다. 휴지통도 용량에 포함됩니다.', 'error');
     // 모든 배치 완료 시 패널 닫고 파일 목록 즉시 새로고침
     if(_uploadDone+_uploadFail>=_uploadActive){
         // 완료 상태 표시
@@ -987,7 +991,7 @@ async function uploadOne(file, listEl, parentId, mode) {
             };
             x.onload=()=>{
                 if(x.status>=200&&x.status<300){bar.style.width='100%';bar.style.background='#22c55e';statusEl.textContent='완료';trackBytes(fSize);ok();}
-                else{bar.style.background='#ef4444';statusEl.textContent='실패';statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('upload failed'));}
+                else{if(x.status===413)_quotaHit=true;bar.style.background='#ef4444';statusEl.textContent=x.status===413?'용량 초과':'실패';statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('upload failed'));}
             };
             x.onerror=()=>{bar.style.background='#ef4444';statusEl.textContent='실패';statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('network error'));};
             x.ontimeout=()=>{bar.style.background='#ef4444';statusEl.textContent='시간초과';statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('timeout'));};
@@ -998,7 +1002,7 @@ async function uploadOne(file, listEl, parentId, mode) {
     }
     // 청크 업로드 (대용량 파일)
     const sr=await fetch('/api/drive/upload/start',{method:'POST',headers:{...AUTH,'Content-Type':'application/json'},body:JSON.stringify({fileName:file.name,fileSize:fSize,totalChunks:chunks,parentId,mode:mode||''})});
-    if(!sr.ok){bar.style.background='#ef4444';statusEl.textContent='실패';statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('start failed');}
+    if(!sr.ok){if(sr.status===413)_quotaHit=true;bar.style.background='#ef4444';statusEl.textContent=sr.status===413?'용량 초과':'실패';statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('start failed');}
     const{uploadId}=await sr.json();let next=0;let chunkFail=false;
     async function cw(){
         while(next<chunks&&!chunkFail){
@@ -1017,7 +1021,7 @@ async function uploadOne(file, listEl, parentId, mode) {
     if(chunkFail){bar.style.background='#ef4444';statusEl.textContent='실패';statusEl.style.color='#ef4444';trackBytes(fSize);listEl.scrollTop=listEl.scrollHeight;throw new Error('chunk upload failed');}
     const cr=await fetch('/api/drive/upload/complete',{method:'POST',headers:{...AUTH,'Content-Type':'application/json'},body:JSON.stringify({uploadId})});
     if(cr.ok){bar.style.width='100%';bar.style.background='#22c55e';statusEl.textContent='완료';}
-    else{bar.style.background='#ef4444';statusEl.textContent='실패';statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('complete failed');}
+    else{if(cr.status===413)_quotaHit=true;bar.style.background='#ef4444';statusEl.textContent=cr.status===413?'용량 초과':'실패';statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('complete failed');}
     trackBytes(fSize);
     listEl.scrollTop = listEl.scrollHeight;
 }
@@ -1272,13 +1276,15 @@ function toggleSidebar() {
 // ═══════════════════════════════════════════════════════════
 // 로그아웃 / 사용량
 // ═══════════════════════════════════════════════════════════
-async function logout(){await fetch('/api/drive/logout',{method:'POST',headers:AUTH});localStorage.removeItem('driveToken');location.href='/drive';}
+// 통합 계정: 드라이브 토큰 + 사이트 로그인까지 함께 끝냄 (안 그러면 /drive에서 바로 다시 들어옴)
+async function logout(){await fetch('/api/drive/logout',{method:'POST',headers:AUTH});await fetch('/api/astera/logout',{method:'POST',credentials:'same-origin'});localStorage.removeItem('driveToken');location.href='/';}
 async function loadUsage(){
     try {
         const res=await fetch('/api/drive/usage',{headers:AUTH});
         if(!res.ok){ document.getElementById('usageText').textContent='연결 오류'; return; }
         const d=await res.json();
-        const used=d.usage||0, total=d.total||0;
+        // 회원: 3GB 한도 대비(휴지통 포함) / 관리자(quota=null): SSD 전체 대비
+        const used=d.quota!=null?(d.quotaUsed||0):(d.usage||0), total=d.quota!=null?d.quota:(d.total||0);
         if(total<=0){ document.getElementById('usageText').textContent='용량 정보 없음'; return; }
         const pct=Math.min(used/total*100,100);
         const bar=document.getElementById('usageBar');
