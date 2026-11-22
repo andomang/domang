@@ -199,7 +199,7 @@
                 err.textContent = '';
                 var data = { email: f.email.value.trim(), code: f.code.value.trim() };
                 post(findMode === 'pw' ? '/api/account/find-pw/verify' : '/api/account/find-id/verify', data).then(function (j) {
-                    if (j.result !== 'ok') { err.textContent = j.result === 'not_found' ? '일치하는 계정이 없습니다.' : '인증코드가 맞지 않거나 시간이 지났습니다.'; return; }
+                    if (j.result !== 'ok') { err.textContent = j.result === 'not_found' ? '일치하는 계정이 없습니다.' : j.result === 'rate_limited' ? MAIL_MSG.rate_limited : '인증코드가 맞지 않거나 시간이 지났습니다. (5번 틀리면 새 코드를 받아야 합니다)'; return; }
                     codeRow.hidden = true; result.hidden = false;
                     if (findMode === 'id') {
                         // 보안상 아이디 일부는 가려서 보여 줌

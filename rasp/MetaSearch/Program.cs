@@ -984,7 +984,8 @@ app.MapGet("/api/search", (HttpContext ctx, SearchDao searchDao, DbService db) =
 
 // 관리자 권한 확인 헬퍼 (구성 파일 + DB ugrade 컬럼 모두 확인)
 var adminUsers = new HashSet<string>(
-    (builder.Configuration.GetSection("AdminUsers").Get<string[]>() ?? new[] { "test" })
+    // 설정이 없으면 아무도 관리자가 아님 (예전엔 'test'가 기본 관리자로 들어가 있었음)
+    (builder.Configuration.GetSection("AdminUsers").Get<string[]>() ?? Array.Empty<string>())
     .Select(u => u.Trim().ToLowerInvariant()));
 bool IsAdmin(string? uid)
 {
@@ -1413,6 +1414,8 @@ app.MapPost("/api/email/send-code", async (HttpContext ctx, EmailService email, 
 // 인증코드 확인
 app.MapPost("/api/email/verify-code", async (HttpContext ctx, EmailService email) =>
 {
+    // 인증코드 무작정 대입 방지: IP당 1분에 10번까지 (코드별 5번 틀리면 폐기와 함께)
+    if (IsRateLimited($"verify:{GetRealIp(ctx)}", 10, 60)) return Results.Json(new { result = "rate_limited" });
     var body = await ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>();
     string addr = body.TryGetProperty("email", out var e) ? e.GetString() ?? "" : "";
     string code = body.TryGetProperty("code", out var c) ? c.GetString() ?? "" : "";
@@ -1457,6 +1460,8 @@ app.MapPost("/api/account/find-id", async (HttpContext ctx, EmailService email, 
 // 아이디 찾기: 인증코드 확인 후 마스킹된 아이디 반환
 app.MapPost("/api/account/find-id/verify", (HttpContext ctx, EmailService email, DbService db) =>
 {
+    // 인증코드 무작정 대입 방지: IP당 1분에 10번까지 (코드별 5번 틀리면 폐기와 함께)
+    if (IsRateLimited($"verify:{GetRealIp(ctx)}", 10, 60)) return Results.Json(new { result = "rate_limited" });
     var body = ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>().Result;
     string addr = body.TryGetProperty("email", out var e) ? e.GetString() ?? "" : "";
     string code = body.TryGetProperty("code", out var c) ? c.GetString() ?? "" : "";
@@ -1514,6 +1519,8 @@ app.MapPost("/api/account/find-pw", async (HttpContext ctx, EmailService email, 
 // 비밀번호 찾기: 인증코드 확인
 app.MapPost("/api/account/find-pw/verify", (HttpContext ctx, EmailService email) =>
 {
+    // 인증코드 무작정 대입 방지: IP당 1분에 10번까지 (코드별 5번 틀리면 폐기와 함께)
+    if (IsRateLimited($"verify:{GetRealIp(ctx)}", 10, 60)) return Results.Json(new { result = "rate_limited" });
     var body = ctx.Request.ReadFromJsonAsync<System.Text.Json.JsonElement>().Result;
     string addr = body.TryGetProperty("email", out var e) ? e.GetString() ?? "" : "";
     string code = body.TryGetProperty("code", out var c) ? c.GetString() ?? "" : "";
@@ -1962,12 +1969,19 @@ int? DriveAdminAuth(HttpContext ctx, DriveService drive)
 }
 
 // 용량 초과 응답 (화면에서 '용량 초과'로 표시)
-IResult QuotaExceeded() => Results.Json(new { error = "quota", message = "드라이브 용량(3GB)을 넘어 저장할 수 없습니다." }, statusCode: 413);
+IResult QuotaExceeded() => Results.Json(new { error = "quota", message = "드라이브 용량(5GB)을 넘어 저장할 수 없습니다." }, statusCode: 413);
+// 저장 디스크(회원용 HDD)가 빠져 있을 때 — 쓰기를 거절해야 SSD의 빈 마운트 폴더에 몰래 저장되지 않음
+IResult StorageOffline() => Results.Json(new { error = "storage", message = "회원 저장소 점검 중입니다. 잠시 후 다시 시도해 주세요." }, statusCode: 503);
 
 // 드라이브 진단 엔드포인트 — 문제 발생 시 환경/DB 상태 확인용
+// 예전 관리자 주소 → 통합 관리자 페이지의 해당 메뉴로 (즐겨찾기·옛 링크 유지)
+app.MapGet("/pokeadmin", () => Results.Redirect("/admin#poke"));
+app.MapGet("/drive/admin", () => Results.Redirect("/admin#drive"));
+
+// 서버 OS·런타임·DB 구조가 드러나므로 관리자만
 app.MapGet("/api/drive/diag", (HttpContext ctx, DriveService drive, DbService db) =>
 {
-    int? userId = DriveAuth(ctx, drive);
+    int? userId = DriveAdminAuth(ctx, drive);
     if (userId == null) return Results.Unauthorized();
 
     var info = new Dictionary<string, object>();
@@ -2007,7 +2021,7 @@ app.MapGet("/api/drive/diag", (HttpContext ctx, DriveService drive, DbService db
     // 스토리지 경로 확인
     try
     {
-        string userDir = Path.Combine("/mnt/ssd/drive", userId.Value.ToString());
+        string userDir = drive.EnsureUserDir(userId.Value);
         info["storagePath"] = userDir;
         info["storageExists"] = Directory.Exists(userDir);
         if (Directory.Exists(userDir))
@@ -2019,7 +2033,7 @@ app.MapGet("/api/drive/diag", (HttpContext ctx, DriveService drive, DbService db
 });
 
 // 통합 로그인(SSO) — domang 사이트에 로그인한 세션이면 그 회원의 드라이브 토큰을 발급
-// 드라이브 계정이 없으면 이때 만들어짐 (기존 가입자도 처음 들어올 때 3GB 공간이 생김)
+// 드라이브 계정이 없으면 이때 만들어짐 (기존 가입자도 처음 들어올 때 5GB 공간이 생김)
 app.MapPost("/api/drive/sso", (HttpContext ctx, DriveService drive) =>
 {
     EnsureDriveSchema(drive);
@@ -2054,17 +2068,17 @@ app.MapGet("/api/drive/usage", (HttpContext ctx, DriveService drive) =>
     if (userId == null) return Results.Unauthorized();
     long usage = drive.GetUsage(userId.Value);
 
-    // SSD 전체/사용가능 용량 조회
+    // 이 계정이 쓰는 디스크(관리자 SSD / 회원 HDD)의 전체/사용가능 용량
     long total = 0, free = 0;
     try
     {
-        var di = new DriveInfo("/mnt/ssd");
+        var di = new DriveInfo(drive.StorageMount(userId.Value));
         total = di.TotalSize;
         free = di.AvailableFreeSpace;
     }
     catch { }
 
-    // quota: 회원은 3GB, 관리자는 null(무제한) / quotaUsed: 휴지통까지 포함한 사용량
+    // quota: 회원은 5GB, 관리자는 null(무제한) / quotaUsed: 휴지통까지 포함한 사용량
     return Results.Json(new { usage, total, free, quota = drive.GetQuota(userId.Value), quotaUsed = drive.GetQuotaUsage(userId.Value) });
 });
 
@@ -2114,6 +2128,7 @@ app.MapPost("/api/drive/mkdir", async (HttpContext ctx, DriveService drive) =>
     name = DriveService.SanitizeFileName(name);
     int? parentId = json.RootElement.TryGetProperty("parentId", out var p) && p.ValueKind != System.Text.Json.JsonValueKind.Null
         ? p.GetInt32() : null;
+    if (!drive.IsOwnFolder(userId.Value, parentId)) return Results.BadRequest();
 
     int folderId = drive.CreateFolder(userId.Value, name, parentId);
     return Results.Json(new { id = folderId });
@@ -2136,7 +2151,9 @@ app.MapGet("/api/drive/check-dup", (HttpContext ctx, DriveService drive) =>
     }
     catch (Exception ex)
     {
-        return Results.Json(new { error = ex.Message }, statusCode: 500);
+        // 내부 오류 내용은 서버 로그에만
+        Console.WriteLine("[Drive] 중복 확인 실패: " + ex);
+        return Results.Json(new { error = "확인하지 못했습니다." }, statusCode: 500);
     }
 });
 
@@ -2154,6 +2171,8 @@ app.MapPost("/api/drive/upload", async (HttpContext ctx, DriveService drive) =>
 
         int? parentId = null;
         if (form.TryGetValue("parentId", out var pv) && int.TryParse(pv, out int pid)) parentId = pid;
+        if (!drive.IsOwnFolder(userId.Value, parentId)) return Results.BadRequest("잘못된 폴더");
+        if (!drive.StorageOnline(userId.Value)) return StorageOffline();
 
         string mode = form["mode"].FirstOrDefault() ?? "";
         // 파일명 보안 정리 (경로 탐색·XSS 방지)
@@ -2182,10 +2201,20 @@ app.MapPost("/api/drive/upload", async (HttpContext ctx, DriveService drive) =>
         if (drive.WouldExceedQuota(userId.Value, file.Length)) return QuotaExceeded();
         int fileId = drive.RegisterFile(userId.Value, finalName, file.Length, parentId);
         string path = drive.GetPhysicalPath(userId.Value, fileId);
-        // 사용자 저장 디렉토리 자동 생성 (첫 업로드 시 필요)
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        using var stream = new FileStream(path, FileMode.Create);
-        await file.CopyToAsync(stream);
+        try
+        {
+            // 사용자 저장 디렉토리 자동 생성 (첫 업로드 시 필요)
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            using var stream = new FileStream(path, FileMode.Create);
+            await file.CopyToAsync(stream);
+        }
+        catch
+        {
+            // 쓰다가 실패하면 DB 기록도 지워 '파일 없는 항목'이 용량을 차지하지 않게
+            drive.Delete(userId.Value, fileId);
+            try { File.Delete(path); } catch { }
+            throw;
+        }
 
         return Results.Json(new { id = fileId, fileName = finalName });
     }
@@ -2228,8 +2257,13 @@ app.MapPost("/api/drive/upload/start", async (HttpContext ctx, DriveService driv
         totalChunks <= 0 || totalChunks > 50000 || (fileSize + chunkSize - 1) / chunkSize != totalChunks)
         return Results.BadRequest("잘못된 업로드 파라미터");
     fileName = DriveService.SanitizeFileName(fileName);
-    // 용량 한도 확인 (완료 단계에서 한 번 더 확인)
-    if (drive.WouldExceedQuota(userId.Value, fileSize)) return QuotaExceeded();
+    if (!drive.IsOwnFolder(userId.Value, parentId)) return Results.BadRequest("잘못된 폴더");
+    if (!drive.StorageOnline(userId.Value)) return StorageOffline();
+    // 진행 중인 업로드도 용량에 셈 — 여러 개를 동시에 시작해 한도를 넘기는 것 방지 (완료 단계에서 한 번 더 확인)
+    // shortcut: 화면에서 업로드를 취소해도 서버 기록은 1시간 정리 타이머가 지울 때까지 용량·개수에 잡힘 — 불편 신고가 오면 취소 API를 추가할 것
+    var mine = _uploads.Values.Where(u => u.UserId == userId.Value).ToList();
+    if (mine.Count >= 6) return Results.Json(new { error = "busy", message = "동시에 올릴 수 있는 파일이 너무 많습니다. 잠시 후 다시 시도해 주세요." }, statusCode: 429);
+    if (drive.WouldExceedQuota(userId.Value, fileSize + mine.Sum(u => u.FileSize))) return QuotaExceeded();
 
     string dir = drive.EnsureUserDir(userId.Value);
     Directory.CreateDirectory(dir);
@@ -2567,15 +2601,23 @@ app.MapPost("/api/drive/copy", async (HttpContext ctx, DriveService drive) =>
     var json = System.Text.Json.JsonDocument.Parse(await reader.ReadToEndAsync());
     int fileId = json.RootElement.GetProperty("id").GetInt32();
     var srcItem = drive.GetFile(userId.Value, fileId);
-    if (srcItem != null && drive.WouldExceedQuota(userId.Value, srcItem.FileSize)) return QuotaExceeded();
+    if (srcItem == null || srcItem.IsFolder) return Results.BadRequest();
+    if (!drive.StorageOnline(userId.Value)) return StorageOffline();
+    if (drive.WouldExceedQuota(userId.Value, srcItem.FileSize)) return QuotaExceeded();
 
     int? newId = drive.CopyFile(userId.Value, fileId);
     if (newId == null) return Results.BadRequest();
 
-    // 물리 파일 복사
+    // 물리 파일 복사 — 실패하면 방금 만든 DB 기록을 지움 (파일 없는 항목 방지)
     string src = drive.GetPhysicalPath(userId.Value, fileId);
     string dst = drive.GetPhysicalPath(userId.Value, newId.Value);
-    try { if (File.Exists(src)) File.Copy(src, dst); } catch { }
+    try { File.Copy(src, dst); }
+    catch (Exception ex)
+    {
+        drive.Delete(userId.Value, newId.Value);
+        Console.WriteLine("[Drive] 복사 실패: " + ex.Message);
+        return Results.Json(new { error = "복사하지 못했습니다." }, statusCode: 500);
+    }
 
     return Results.Json(new { id = newId });
 });

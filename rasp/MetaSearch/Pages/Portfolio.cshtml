@@ -476,7 +476,7 @@
         fetch('/api/pokemon/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (me) {
             if (!me.loggedIn) return;
             var bar = document.getElementById('authBar'), name = me.nick || me.userId;
-            bar.innerHTML = (me.isAdmin ? '<a href="/pokeadmin" class="auth-link">아스테라 관리</a>' : '') +
+            bar.innerHTML = (me.isAdmin ? '<a href="/admin" class="auth-link">관리자</a>' : '') +
                 '<span class="auth-name"></span><button type="button" class="auth-btn" id="authOut">로그아웃</button>';
             bar.querySelector('.auth-name').textContent = name + ' 님';
             document.getElementById('authOut').addEventListener('click', function () {

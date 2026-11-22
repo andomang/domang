@@ -8,33 +8,36 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CloudDrive</title>
+    <title>Cloud Drive — domang.org</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
     <style>
-        :root { --bg:#0f172a; --bg2:#1e293b; --bg3:#334155; --fg:#e2e8f0; --fg2:#94a3b8; --fg3:#64748b; --accent:#6366f1; --accent2:#818cf8; }
-        * { font-family:'Inter',sans-serif; box-sizing:border-box; }
-        body { background:var(--bg); color:var(--fg); margin:0; }
+        /* 색: 메인·소개 페이지(project.css)와 같은 팔레트, 강조색은 Cloud Drive 초록
+           어두운 값이 기본이고 body.light 가 밝은 값 (사이트와 같은 localStorage 'theme' 를 따름) */
+        :root { --bg:#0f1012; --bg2:#17181b; --bg3:#26282d; --fg:#ecebe7; --fg2:#b4b6bb; --fg3:#8d9097; --accent:#63d47a; --accent2:#63d47a; --on-accent:#0f1012; }
+        * { font-family:"Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; box-sizing:border-box; }
+        body { background:var(--bg); color:var(--fg); margin:0; word-break:keep-all; -webkit-font-smoothing:antialiased; color-scheme:dark; }
         /* 라이트 테마 */
-        body.light { --bg:#f8fafc; --bg2:#ffffff; --bg3:#e2e8f0; --fg:#0f172a; --fg2:#475569; --fg3:#94a3b8; --accent:#4f46e5; --accent2:#6366f1; }
-        body.light { background:var(--bg); color:var(--fg); }
+        body.light { --bg:#ffffff; --bg2:#ffffff; --bg3:#e7e5e0; --fg:#15161a; --fg2:#4c5058; --fg3:#6b7079; --accent:#2b7a3b; --accent2:#2b7a3b; --on-accent:#ffffff; }
+        body.light { background:var(--bg); color:var(--fg); color-scheme:light; }
+        ::selection { background:var(--accent); color:var(--on-accent); }
 
         ::-webkit-scrollbar { width:6px; height:6px; }
         ::-webkit-scrollbar-track { background:transparent; }
         ::-webkit-scrollbar-thumb { background:var(--bg3); border-radius:3px; }
 
-        .drop-overlay { display:none; position:fixed; inset:0; z-index:9999; background:rgba(99,102,241,.12); border:3px dashed var(--accent); pointer-events:none; }
+        .drop-overlay { display:none; position:fixed; inset:0; z-index:9999; background:color-mix(in srgb,var(--accent) 12%,transparent); border:3px dashed var(--accent); pointer-events:none; }
         .drop-overlay.active { display:flex; align-items:center; justify-content:center; }
 
         .file-row { transition:background .1s; cursor:pointer; }
-        .file-row:hover { background:rgba(99,102,241,.06); }
-        .file-row.selected { background:rgba(99,102,241,.12); }
-        .file-row.drag-over { background:rgba(99,102,241,.2); outline:2px solid var(--accent); outline-offset:-2px; border-radius:8px; }
+        .file-row:hover { background:color-mix(in srgb,var(--accent) 6%,transparent); }
+        .file-row.selected { background:color-mix(in srgb,var(--accent) 12%,transparent); }
+        .file-row.drag-over { background:color-mix(in srgb,var(--accent) 20%,transparent); outline:2px solid var(--accent); outline-offset:-2px; border-radius:8px; }
 
         .chk { appearance:none; width:18px; height:18px; border:2px solid var(--bg3); border-radius:5px; cursor:pointer; transition:all .15s; flex-shrink:0; position:relative; background:transparent; }
         .chk:checked { background:var(--accent); border-color:var(--accent); }
-        .chk:checked::after { content:''; position:absolute; left:5px; top:1px; width:5px; height:10px; border:solid white; border-width:0 2px 2px 0; transform:rotate(45deg); }
+        .chk:checked::after { content:''; position:absolute; left:5px; top:1px; width:5px; height:10px; border:solid var(--on-accent); border-width:0 2px 2px 0; transform:rotate(45deg); }
         .chk:hover { border-color:var(--accent2); }
 
         .progress-bar { transition:width .3s ease; }
@@ -61,13 +64,13 @@
 
         /* 사이드바 */
         .nav-item { display:flex; align-items:center; gap:8px; padding:8px 12px; border-radius:10px; font-size:13px; color:var(--fg2); cursor:pointer; transition:all .15s; }
-        .nav-item:hover { background:rgba(99,102,241,.08); color:var(--fg); }
-        .nav-item.active { background:rgba(99,102,241,.15); color:var(--accent2); font-weight:600; }
+        .nav-item:hover { background:color-mix(in srgb,var(--accent) 8%,transparent); color:var(--fg); }
+        .nav-item.active { background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent2); font-weight:600; }
 
         /* 그리드 뷰 */
         .grid-item { border-radius:12px; border:1px solid var(--bg3); background:var(--bg2); transition:all .15s; cursor:pointer; overflow:hidden; }
         .grid-item:hover { border-color:var(--accent); transform:translateY(-1px); box-shadow:0 4px 16px rgba(0,0,0,.2); }
-        .grid-item.selected { border-color:var(--accent); background:rgba(99,102,241,.1); }
+        .grid-item.selected { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent); }
 
         /* 미리보기 */
         .preview-bg { display:none; position:fixed; inset:0; z-index:9995; background:rgba(0,0,0,.85); backdrop-filter:blur(8px); align-items:center; justify-content:center; flex-direction:column; }
@@ -84,7 +87,7 @@
 
         /* 검색 인풋 */
         .search-input { background:var(--bg2); border:1px solid var(--bg3); }
-        .search-input:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px rgba(99,102,241,.2); }
+        .search-input:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent); }
     </style>
     <!-- 구글 애드센스 (설정에 게시자 ID가 있을 때만, 제외 경로 제외) -->
     <partial name="_AdHead" />
@@ -102,10 +105,10 @@
 <!-- ── 사이드바 ── -->
 <aside id="sidebar" class="w-56 shrink-0 border-r hidden lg:flex flex-col p-3 gap-1" style="background:var(--bg); border-color:var(--bg3)">
     <a href="/drive/files" class="flex items-center gap-2.5 px-3 py-2 mb-3" onclick="goView('drive');return false;">
-        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:rgba(99,102,241,.2); border:1px solid rgba(99,102,241,.3)">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:color-mix(in srgb,var(--accent) 20%,transparent); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent)">
             <i data-lucide="cloud" class="w-4 h-4" style="color:var(--accent2)"></i>
         </div>
-        <span class="text-base font-bold" style="color:var(--fg)">CloudDrive</span>
+        <span class="text-base font-bold" style="color:var(--fg); letter-spacing:-0.02em">Cloud Drive</span>
     </a>
     <div class="nav-item active" data-view="drive" onclick="goView('drive')">
         <i data-lucide="hard-drive" class="w-4 h-4"></i><span>내 드라이브</span>
@@ -143,7 +146,7 @@
         <!-- 모바일 로고 -->
         <div class="lg:hidden flex items-center gap-1.5">
             <i data-lucide="cloud" class="w-4 h-4" style="color:var(--accent2)"></i>
-            <span class="text-sm font-bold">CloudDrive</span>
+            <span class="text-sm font-bold">Cloud Drive</span>
         </div>
         <!-- 검색 -->
         <div class="flex-1 max-w-lg mx-auto relative">
@@ -154,13 +157,17 @@
         </div>
         <!-- 우측 액션 -->
         <div class="flex items-center gap-1.5">
+            <!-- domang.org 홈으로 (메인·게임과 오갈 수 있게) -->
+            <a href="/" class="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-semibold transition" style="color:var(--fg2)" title="domang.org 홈">
+                <i data-lucide="home" class="w-4 h-4"></i><span class="hidden md:inline">domang.org</span>
+            </a>
             <button onclick="toggleTheme()" class="p-1.5 rounded-lg transition" style="color:var(--fg3)" title="테마 전환">
                 <i data-lucide="sun" id="themeIcon" class="w-4 h-4"></i>
             </button>
             <div class="flex items-center gap-1 text-sm" style="color:var(--fg2)">
                 <i data-lucide="user" class="w-3.5 h-3.5"></i>
                 <span id="userName" class="hidden sm:inline"></span>
-                <a id="adminLink" href="/drive/admin" class="hidden text-xs px-2 py-1 rounded-lg border" style="border-color:var(--border,#e5e7eb)">회원 드라이브 관리</a>
+                <a id="adminLink" href="/admin#drive" class="hidden text-xs px-2 py-1 rounded-lg border" style="border-color:var(--border,#e5e7eb)">회원 드라이브 관리</a>
             </div>
             <button onclick="logout()" class="p-1.5 rounded-lg transition" style="color:var(--fg3)" title="로그아웃">
                 <i data-lucide="log-out" class="w-4 h-4"></i>
@@ -186,7 +193,7 @@
                     </select>
                     <!-- 뷰 전환 -->
                     <div class="flex rounded-lg overflow-hidden border" style="border-color:var(--bg3)">
-                        <button onclick="setViewMode('list')" id="viewList" class="p-1.5 transition" style="background:var(--accent); color:white" title="목록"><i data-lucide="list" class="w-3.5 h-3.5"></i></button>
+                        <button onclick="setViewMode('list')" id="viewList" class="p-1.5 transition" style="background:var(--accent); color:var(--on-accent)" title="목록"><i data-lucide="list" class="w-3.5 h-3.5"></i></button>
                         <button onclick="setViewMode('grid')" id="viewGrid" class="p-1.5 transition" style="background:var(--bg2); color:var(--fg3)" title="그리드"><i data-lucide="grid-3x3" class="w-3.5 h-3.5"></i></button>
                     </div>
                     <!-- 액션 버튼 (드라이브 뷰 전용) -->
@@ -199,7 +206,7 @@
                             <i data-lucide="folder-up" class="w-3.5 h-3.5" style="color:var(--accent2)"></i>
                             <span class="hidden sm:inline">폴더</span>
                         </button>
-                        <button onclick="document.getElementById('fileInput').click()" class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-white text-xs font-medium transition" style="background:var(--accent)">
+                        <button onclick="document.getElementById('fileInput').click()" class="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition" style="color:var(--on-accent);background:var(--accent)">
                             <i data-lucide="upload" class="w-3.5 h-3.5"></i><span>업로드</span>
                         </button>
                         <input type="file" id="fileInput" multiple class="hidden" onchange="handleFileSelect(this.files)" />
@@ -270,7 +277,7 @@
 </div>
 
 <!-- ── 선택 바 ── -->
-<div id="selBar" class="sel-bar fixed bottom-0 inset-x-0 z-40 border-t px-4 py-3" style="background:var(--bg2); border-color:rgba(99,102,241,.3)">
+<div id="selBar" class="sel-bar fixed bottom-0 inset-x-0 z-40 border-t px-4 py-3" style="background:var(--bg2); border-color:color-mix(in srgb,var(--accent) 30%,transparent)">
     <div class="max-w-7xl mx-auto flex items-center justify-between">
         <div class="flex items-center gap-3">
             <button onclick="clearSelection()" class="p-1.5 rounded-lg transition" style="color:var(--fg3)"><i data-lucide="x" class="w-4 h-4"></i></button>
@@ -318,7 +325,7 @@
                class="search-input w-full rounded-xl px-4 py-2.5 text-sm" style="color:var(--fg)" />
         <div class="flex gap-2 mt-4">
             <button onclick="closeFolderModal()" class="flex-1 py-2 rounded-xl text-sm transition" style="background:var(--bg3); color:var(--fg2)">취소</button>
-            <button onclick="createFolder()" class="flex-1 py-2 rounded-xl text-white text-sm font-medium transition" style="background:var(--accent)">만들기</button>
+            <button onclick="createFolder()" class="flex-1 py-2 rounded-xl text-sm font-medium transition" style="background:var(--accent); color:var(--on-accent)">만들기</button>
         </div>
     </div>
 </div>
@@ -331,7 +338,7 @@
                class="search-input w-full rounded-xl px-4 py-2.5 text-sm" style="color:var(--fg)" />
         <div class="flex gap-2 mt-4">
             <button onclick="closeRenameModal()" class="flex-1 py-2 rounded-xl text-sm transition" style="background:var(--bg3); color:var(--fg2)">취소</button>
-            <button onclick="doRename()" class="flex-1 py-2 rounded-xl text-white text-sm font-medium transition" style="background:var(--accent)">변경</button>
+            <button onclick="doRename()" class="flex-1 py-2 rounded-xl text-sm font-medium transition" style="background:var(--accent); color:var(--on-accent)">변경</button>
         </div>
     </div>
 </div>
@@ -343,7 +350,7 @@
         <div id="moveFolderList" class="space-y-1 max-h-60 overflow-y-auto mb-4"></div>
         <div class="flex gap-2">
             <button onclick="closeMoveModal()" class="flex-1 py-2 rounded-xl text-sm transition" style="background:var(--bg3); color:var(--fg2)">취소</button>
-            <button onclick="doMove()" class="flex-1 py-2 rounded-xl text-white text-sm font-medium transition" style="background:var(--accent)">이동</button>
+            <button onclick="doMove()" class="flex-1 py-2 rounded-xl text-sm font-medium transition" style="background:var(--accent); color:var(--on-accent)">이동</button>
         </div>
     </div>
 </div>
@@ -372,7 +379,7 @@
         </div>
         <div class="flex gap-2 mt-4">
             <button onclick="dupResolve('skip')" class="flex-1 py-2 rounded-xl text-xs transition" style="background:var(--bg3); color:var(--fg2)">건너뛰기</button>
-            <button onclick="dupResolve('rename')" class="flex-1 py-2 rounded-xl text-xs font-medium transition" style="background:var(--accent); color:white">이름 변경</button>
+            <button onclick="dupResolve('rename')" class="flex-1 py-2 rounded-xl text-xs font-medium transition" style="background:var(--accent); color:var(--on-accent)">이름 변경</button>
             <button onclick="dupResolve('overwrite')" class="flex-1 py-2 rounded-xl text-xs font-medium transition" style="background:#dc2626; color:white">덮어쓰기</button>
         </div>
     </div>
@@ -412,7 +419,8 @@ let dupApplyAllMode = null;        // '모두 적용' 모드 저장
 lucide.createIcons();
 
 // 테마 초기화
-if (localStorage.getItem('theme') === 'light') document.body.classList.add('light');
+// 저장값이 없으면 기기 설정(prefers-color-scheme)을 따름 — 메인 등 다른 페이지와 같은 규칙
+{ const t = localStorage.getItem('theme'); if (t === 'light' || (t !== 'dark' && !matchMedia('(prefers-color-scheme: dark)').matches)) document.body.classList.add('light'); }
 updateThemeIcon();
 
 // 뷰 모드 초기화
@@ -660,10 +668,10 @@ function setViewMode(mode, init) {
     localStorage.setItem('viewMode', mode);
     const lBtn = document.getElementById('viewList'), gBtn = document.getElementById('viewGrid');
     if (mode === 'list') {
-        lBtn.style.background = 'var(--accent)'; lBtn.style.color = 'white';
+        lBtn.style.background = 'var(--accent)'; lBtn.style.color = 'var(--on-accent)';
         gBtn.style.background = 'var(--bg2)'; gBtn.style.color = 'var(--fg3)';
     } else {
-        gBtn.style.background = 'var(--accent)'; gBtn.style.color = 'white';
+        gBtn.style.background = 'var(--accent)'; gBtn.style.color = 'var(--on-accent)';
         lBtn.style.background = 'var(--bg2)'; lBtn.style.color = 'var(--fg3)';
     }
     if (!init) renderFiles();
@@ -835,7 +843,10 @@ async function handleFolderDrop(items) {
 const CHUNK=20*1024*1024, MAX_PAR=3;
 // 전역 업로드 진행 추적
 let _uploadActive=0, _uploadDone=0, _uploadFail=0;
-let _quotaHit=false;   // 이번 업로드 중 용량(3GB) 초과로 거절된 파일이 있었는지
+let _quotaHit=false;   // 이번 업로드 중 용량(5GB) 초과로 거절된 파일이 있었는지
+let _storageHit=false; // 회원 저장소(HDD)가 빠져 있어 거절된 파일이 있었는지
+// 업로드 실패 상태 문구 — 413 용량 초과, 503 저장소 점검(HDD 분리), 429 동시 업로드 과다
+function upLabel(s){return s===413?'용량 초과':s===503?'저장소 점검 중':s===429?'잠시 후 다시':'실패';}
 let _uploadTotalBytes=0, _uploadSentBytes=0, _uploadStartTime=0;
 function _formatEta(sec){
     if(!isFinite(sec)||sec<0) return '';
@@ -860,7 +871,7 @@ function _updateUploadCount(){
         document.getElementById('uploadEta').textContent = '계산 중...';
     }
 }
-function _resetUploadStats(){ _quotaHit=false; _uploadActive=0;_uploadDone=0;_uploadFail=0;_uploadTotalBytes=0;_uploadSentBytes=0;_uploadStartTime=0; }
+function _resetUploadStats(){ _quotaHit=false;_storageHit=false; _uploadActive=0;_uploadDone=0;_uploadFail=0;_uploadTotalBytes=0;_uploadSentBytes=0;_uploadStartTime=0; }
 // 업로드 중 새로고침/탭닫기 방지
 window.addEventListener('beforeunload', e=>{
     if(_uploadActive>0 && (_uploadDone+_uploadFail)<_uploadActive){
@@ -925,7 +936,8 @@ async function handleFileSelect(files) {
     if (uploaded > 0 && failed === 0) toast(uploaded + '개 업로드 완료', 'success');
     else if (uploaded > 0) toast(uploaded + '개 완료, ' + failed + '개 실패', 'warning');
     else if (failed > 0) toast(failed + '개 업로드 실패', 'error');
-    if (_quotaHit) toast('드라이브 용량(3GB)이 부족해 일부 파일을 올리지 못했습니다. 휴지통도 용량에 포함됩니다.', 'error');
+    if (_quotaHit) toast('드라이브 용량(5GB)이 부족해 일부 파일을 올리지 못했습니다. 휴지통도 용량에 포함됩니다.', 'error');
+    if (_storageHit) toast('회원 저장소 점검 중이라 올리지 못했습니다. 잠시 후 다시 시도해 주세요.', 'error');
     // 모든 배치 완료 시 패널 닫고 파일 목록 즉시 새로고침
     if(_uploadDone+_uploadFail>=_uploadActive){
         // 완료 상태 표시
@@ -991,7 +1003,7 @@ async function uploadOne(file, listEl, parentId, mode) {
             };
             x.onload=()=>{
                 if(x.status>=200&&x.status<300){bar.style.width='100%';bar.style.background='#22c55e';statusEl.textContent='완료';trackBytes(fSize);ok();}
-                else{if(x.status===413)_quotaHit=true;bar.style.background='#ef4444';statusEl.textContent=x.status===413?'용량 초과':'실패';statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('upload failed'));}
+                else{if(x.status===413)_quotaHit=true;if(x.status===503)_storageHit=true;bar.style.background='#ef4444';statusEl.textContent=upLabel(x.status);statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('upload failed'));}
             };
             x.onerror=()=>{bar.style.background='#ef4444';statusEl.textContent='실패';statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('network error'));};
             x.ontimeout=()=>{bar.style.background='#ef4444';statusEl.textContent='시간초과';statusEl.style.color='#ef4444';trackBytes(fSize);fail(new Error('timeout'));};
@@ -1002,7 +1014,7 @@ async function uploadOne(file, listEl, parentId, mode) {
     }
     // 청크 업로드 (대용량 파일)
     const sr=await fetch('/api/drive/upload/start',{method:'POST',headers:{...AUTH,'Content-Type':'application/json'},body:JSON.stringify({fileName:file.name,fileSize:fSize,totalChunks:chunks,chunkSize:CHUNK,parentId,mode:mode||''})});
-    if(!sr.ok){if(sr.status===413)_quotaHit=true;bar.style.background='#ef4444';statusEl.textContent=sr.status===413?'용량 초과':'실패';statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('start failed');}
+    if(!sr.ok){if(sr.status===413)_quotaHit=true;if(sr.status===503)_storageHit=true;bar.style.background='#ef4444';statusEl.textContent=upLabel(sr.status);statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('start failed');}
     const{uploadId}=await sr.json();let next=0;let chunkFail=false;
     async function cw(){
         while(next<chunks&&!chunkFail){
@@ -1021,7 +1033,7 @@ async function uploadOne(file, listEl, parentId, mode) {
     if(chunkFail){bar.style.background='#ef4444';statusEl.textContent='실패';statusEl.style.color='#ef4444';trackBytes(fSize);listEl.scrollTop=listEl.scrollHeight;throw new Error('chunk upload failed');}
     const cr=await fetch('/api/drive/upload/complete',{method:'POST',headers:{...AUTH,'Content-Type':'application/json'},body:JSON.stringify({uploadId})});
     if(cr.ok){bar.style.width='100%';bar.style.background='#22c55e';statusEl.textContent='완료';}
-    else{if(cr.status===413)_quotaHit=true;bar.style.background='#ef4444';statusEl.textContent=cr.status===413?'용량 초과':'실패';statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('complete failed');}
+    else{if(cr.status===413)_quotaHit=true;if(cr.status===503)_storageHit=true;bar.style.background='#ef4444';statusEl.textContent=upLabel(cr.status);statusEl.style.color='#ef4444';trackBytes(fSize);throw new Error('complete failed');}
     trackBytes(fSize);
     listEl.scrollTop = listEl.scrollHeight;
 }
@@ -1218,7 +1230,7 @@ function closeMoveModal(){document.getElementById('moveModal').classList.remove(
 function selectMoveTarget(id,el){
     moveTargetId=id;
     document.querySelectorAll('#moveFolderList>div').forEach(d=>{d.style.background='transparent';d.style.borderColor='transparent';});
-    el.style.background='rgba(99,102,241,.15)';el.style.borderColor='rgba(99,102,241,.3)';
+    el.style.background='color-mix(in srgb,var(--accent) 15%,transparent)';el.style.borderColor='color-mix(in srgb,var(--accent) 30%,transparent)';
 }
 async function doMove(){
     if(moveTargetId===undefined)return;
@@ -1283,7 +1295,7 @@ async function loadUsage(){
         const res=await fetch('/api/drive/usage',{headers:AUTH});
         if(!res.ok){ document.getElementById('usageText').textContent='연결 오류'; return; }
         const d=await res.json();
-        // 회원: 3GB 한도 대비(휴지통 포함) / 관리자(quota=null): SSD 전체 대비
+        // 회원: 5GB 한도 대비(휴지통 포함) / 관리자(quota=null): SSD 전체 대비
         const used=d.quota!=null?(d.quotaUsed||0):(d.usage||0), total=d.quota!=null?d.quota:(d.total||0);
         if(total<=0){ document.getElementById('usageText').textContent='용량 정보 없음'; return; }
         const pct=Math.min(used/total*100,100);

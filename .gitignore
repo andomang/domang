@@ -21,6 +21,23 @@ rasp/publish/
 .deploy-hashes
 rasp/MetaSearch/wwwroot/pokemon/
 
+# 실수로 rasp/ 안에 넣어도 올라가지 않게 — 어느 폴더에 있든 제외하는 비밀·백업 파일
+#   (DB 백업 덤프는 회원 정보가 통째로 들어 있음 / 마이그레이션 *.sql은 이름이 달라 그대로 올라감)
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+.pgpass
+id_rsa*
+id_ed25519*
+meta_*.sql
+*_backup*.sql
+*.dump
+*.bak
+*.log
+
 # 라즈베리파이 접속 정보(내부 IP·SSH 사용자)가 들어 있는 개인 운영 스크립트 — 내 PC에만 둠
 rasp/deploy.sh
 rasp/db_backup.bat

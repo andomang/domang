@@ -10,6 +10,8 @@
     overflow: auto;
 }
 .da-dialog::backdrop { background: rgba(15, 16, 18, .45); backdrop-filter: blur(3px); }
+/* 숨김 속성이 레이아웃 지정(display:grid 등)에 덮이지 않게 — 예전엔 인증코드·새 비밀번호 칸이 처음부터 보였음 */
+.da [hidden], .da-dialog [hidden] { display: none !important; }
 @media (prefers-reduced-motion: no-preference) {
     .da-dialog[open] { animation: da-in .35s cubic-bezier(.16, 1, .3, 1); }
     .da-dialog[open]::backdrop { animation: da-fade .3s ease; }

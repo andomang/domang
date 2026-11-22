@@ -6,14 +6,20 @@ namespace MetaSearch.Services;
 /// <summary>
 /// 개인 클라우드 드라이브 서비스.
 /// 인증(PBKDF2 해싱), 파일·폴더 CRUD, 즐겨찾기, 휴지통, 검색, 복사 등.
-/// 물리 저장소: /mnt/ssd/drive/{userId}/
+/// 물리 저장소: 관리자 /mnt/ssd/drive/{userId}/ (빠른 SSD), 일반 회원 /mnt/hdd/drive/{userId}/ (1TB HDD)
 /// </summary>
 public class DriveService
 {
     private readonly DbService _db;
 
-    // SSD 마운트 경로 (라즈베리파이)
-    private const string STORAGE_ROOT = "/mnt/ssd/drive";
+    // 관리자 파일은 SSD, 일반 회원 파일은 HDD에 저장
+    // drive 폴더는 디스크 '안'에 만들어 둠 → 디스크가 빠지면 폴더도 안 보여서 StorageOnline()이 false가 됨
+    private const string ADMIN_ROOT = "/mnt/ssd/drive";
+    private const string MEMBER_ROOT = "/mnt/hdd/drive";
+
+    // 경로 계산은 요청마다 여러 번 일어나므로 관리자 여부를 기억해 둠 (권한 검사는 캐시 없이 IsAdmin으로 따로 함)
+    // shortcut: 관리자 지정/해제는 서버를 재시작해야 저장 위치에 반영됨 — 자주 바뀌게 되면 만료 시간을 둘 것
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, bool> _adminCache = new();
 
     // PBKDF2 해싱 설정 — OWASP 권장 수준
     private const int SALT_SIZE = 16;
@@ -210,16 +216,36 @@ public class DriveService
         return candidate;
     }
 
+    /// <summary>이 계정의 저장소 루트 (관리자 SSD / 회원 HDD)</summary>
+    private string RootFor(int userId) => _adminCache.GetOrAdd(userId, IsAdmin) ? ADMIN_ROOT : MEMBER_ROOT;
+
+    /// <summary>저장 디스크가 연결돼 있는지 — HDD가 빠진 채 쓰면 SSD의 빈 마운트 폴더에 몰래 저장되므로 쓰기 전에 반드시 확인</summary>
+    public bool StorageOnline(int userId) => Directory.Exists(RootFor(userId));
+
+    /// <summary>디스크 전체·남은 용량 표시용 마운트 경로 (/mnt/ssd 또는 /mnt/hdd)</summary>
+    public string StorageMount(int userId) => Path.GetDirectoryName(RootFor(userId))!;
+
     /// <summary>파일 물리 저장 경로 반환</summary>
     public string GetPhysicalPath(int userId, int fileId)
     {
-        return Path.Combine(STORAGE_ROOT, userId.ToString(), fileId.ToString());
+        return Path.Combine(RootFor(userId), userId.ToString(), fileId.ToString());
     }
 
-    /// <summary>사용자 저장소 루트 디렉토리 확보</summary>
+    /// <summary>사용자 저장소 루트 디렉토리 경로</summary>
     public string EnsureUserDir(int userId)
     {
-        return Path.Combine(STORAGE_ROOT, userId.ToString());
+        return Path.Combine(RootFor(userId), userId.ToString());
+    }
+
+    /// <summary>상위 폴더로 쓸 수 있는지 — 본인 것 + 폴더 + 휴지통 아님 (null = 최상위라 항상 가능)
+    /// 남의 폴더 번호나 파일 번호를 상위로 넣는 것을 막음</summary>
+    public bool IsOwnFolder(int userId, int? folderId)
+    {
+        if (folderId == null) return true;
+        using var conn = _db.OpenConnection();
+        return conn.QueryFirstOrDefault<bool>(
+            "SELECT EXISTS(SELECT 1 FROM drive_files WHERE id = @folderId AND user_id = @userId AND is_folder = TRUE AND is_trashed = FALSE)",
+            new { folderId, userId });
     }
 
     /// <summary>파일 정보 조회</summary>
@@ -237,20 +263,8 @@ public class DriveService
         var item = GetFile(userId, fileId);
         if (item == null) return false;
 
+        // 하위 항목 DB 기록은 parent_id 외래키(ON DELETE CASCADE)로 함께 지워짐. 물리 파일은 API에서 먼저 지움
         using var conn = _db.OpenConnection();
-
-        if (item.IsFolder)
-        {
-            conn.Query<int>(
-                @"WITH RECURSIVE sub AS (
-                    SELECT id, is_folder FROM drive_files WHERE parent_id = @fileId AND user_id = @userId
-                    UNION ALL
-                    SELECT f.id, f.is_folder FROM drive_files f JOIN sub s ON f.parent_id = s.id
-                  )
-                  SELECT id FROM sub WHERE is_folder = FALSE",
-                new { fileId, userId });
-        }
-
         conn.Execute("DELETE FROM drive_files WHERE id = @fileId AND user_id = @userId",
             new { fileId, userId });
         return true;
@@ -260,11 +274,12 @@ public class DriveService
     public IEnumerable<int> GetAllFileIdsInFolder(int userId, int folderId)
     {
         using var conn = _db.OpenConnection();
+        // UNION(중복 제거)이라 혹시 폴더 고리가 있어도 무한 반복하지 않음, 본인 항목만 따라감
         return conn.Query<int>(
             @"WITH RECURSIVE sub AS (
                 SELECT id, is_folder FROM drive_files WHERE parent_id = @folderId AND user_id = @userId
-                UNION ALL
-                SELECT f.id, f.is_folder FROM drive_files f JOIN sub s ON f.parent_id = s.id
+                UNION
+                SELECT f.id, f.is_folder FROM drive_files f JOIN sub s ON f.parent_id = s.id WHERE f.user_id = @userId
               )
               SELECT id FROM sub WHERE is_folder = FALSE",
             new { folderId, userId });
@@ -284,7 +299,18 @@ public class DriveService
     public bool Move(int userId, int fileId, int? newParentId)
     {
         if (newParentId == fileId) return false;
+        if (!IsOwnFolder(userId, newParentId)) return false;
         using var conn = _db.OpenConnection();
+        // 폴더를 자기 하위 폴더 안으로 옮기면 고리가 생겨 경로 표시·삭제가 끝나지 않음 → 새 상위 폴더의 조상 중에 자신이 있으면 거부
+        if (newParentId != null && conn.QueryFirstOrDefault<bool>(
+            @"WITH RECURSIVE anc AS (
+                SELECT id, parent_id FROM drive_files WHERE id = @newParentId AND user_id = @userId
+                UNION
+                SELECT f.id, f.parent_id FROM drive_files f JOIN anc a ON f.id = a.parent_id WHERE f.user_id = @userId
+              )
+              SELECT EXISTS(SELECT 1 FROM anc WHERE id = @fileId)",
+            new { newParentId, fileId, userId }))
+            return false;
         int affected = conn.Execute(
             "UPDATE drive_files SET parent_id = @newParentId, updated_at = NOW() WHERE id = @fileId AND user_id = @userId",
             new { newParentId, fileId, userId });
@@ -299,7 +325,8 @@ public class DriveService
         using var conn = _db.OpenConnection();
         int? current = folderId;
 
-        while (current != null)
+        // 깊이 제한: 데이터가 어떻게 꼬여 있어도 무한 반복하지 않게
+        while (current != null && crumbs.Count < 64)
         {
             var folder = conn.QueryFirstOrDefault<(int Id, string Name, int? ParentId)>(
                 "SELECT id, file_name AS Name, parent_id AS ParentId FROM drive_files WHERE id = @id AND user_id = @userId",
@@ -377,12 +404,19 @@ public class DriveService
             new { userId });
     }
 
-    /// <summary>휴지통에서 영구 삭제할 모든 파일 ID 조회</summary>
+    /// <summary>휴지통에서 영구 삭제할 모든 파일 ID 조회 — 휴지통에 넣은 폴더 '안'의 파일까지 포함
+    /// (예전엔 휴지통 항목 자신만 골라서, 폴더째 버리면 DB 기록만 지워지고 실제 파일은 디스크에 남음
+    ///  → 용량 한도가 비워진 것처럼 보여 반복하면 한도를 무시하고 디스크를 채울 수 있었음)</summary>
     public IEnumerable<int> GetTrashFileIds(int userId)
     {
         using var conn = _db.OpenConnection();
         return conn.Query<int>(
-            "SELECT id FROM drive_files WHERE user_id = @userId AND is_trashed = TRUE AND is_folder = FALSE",
+            @"WITH RECURSIVE t AS (
+                SELECT id, is_folder FROM drive_files WHERE user_id = @userId AND is_trashed = TRUE
+                UNION
+                SELECT f.id, f.is_folder FROM drive_files f JOIN t ON f.parent_id = t.id WHERE f.user_id = @userId
+              )
+              SELECT id FROM t WHERE is_folder = FALSE",
             new { userId });
     }
 
@@ -449,10 +483,10 @@ public class DriveService
     // 드라이브 계정(drive_users.username)은 사이트 회원 아이디(members.userid)와 같은 값으로 연결
     // ═══════════════════════════════════════════════════════════════
 
-    /// <summary>일반 회원 1명당 드라이브 용량 (3GB). 관리자는 무제한</summary>
-    public const long MEMBER_QUOTA = 3L * 1024 * 1024 * 1024;
+    /// <summary>일반 회원 1명당 드라이브 용량 (5GB, HDD). 관리자는 무제한</summary>
+    public const long MEMBER_QUOTA = 5L * 1024 * 1024 * 1024;
 
-    /// <summary>사이트 회원의 드라이브 계정을 찾고, 없으면 만듦 (기존 가입자도 처음 들어올 때 자동 생성 → 3GB 지급)</summary>
+    /// <summary>사이트 회원의 드라이브 계정을 찾고, 없으면 만듦 (기존 가입자도 처음 들어올 때 자동 생성 → 5GB 지급)</summary>
     public int GetOrCreateUserForMember(string memberId)
     {
         using var conn = _db.OpenConnection();
