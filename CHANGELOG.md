@@ -3,6 +3,11 @@
 버전 규칙: 작은 수정 `x.x.1` · 큰 수정(새 기능·화면) `x.1.x` · 더 큰 수정(구조·서버·저장 방식 변경) `1.x.x`
 배포: `rasp\ship.ps1` 이 사이트 배포 → 확인 → GitHub 업로드 → 태그와 같은 이름의 릴리스(설명 = 아래 해당 버전 내용)까지 한 번에 합니다.
 
+## 1.2.0 — 2026-11-25
+
+- 프로젝트별 저장소를 따로 운영: 포켓몬스터 아스테라(andomang/pokemon_astera) · Cloud Drive(andomang/drive) · Meta Search(andomang/meta-search). 이 저장소는 전체를 계속 담고, 바뀐 부분은 해당 저장소에도 함께 올라가고 각자 릴리스가 생깁니다
+- 서버 코드 정리: Cloud Drive API 를 Program.cs 에서 DriveApi.cs 로 분리 (동작은 같음)
+
 ## 1.1.0 — 2026-11-25
 
 포켓몬스터 아스테라

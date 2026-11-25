@@ -60,7 +60,8 @@ git diff --cached --quiet
 if ($LASTEXITCODE -ne 0) {
     $msgFile = New-TemporaryFile
     $first = ($notes | Where-Object { $_ -match '^- ' } | Select-Object -First 1) -replace '^- ', ''
-    Set-Content $msgFile -Encoding UTF8 -Value @("$version`: $first", '', $notesText, '', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>')
+    # BOM 없는 UTF-8 로 (Set-Content -Encoding UTF8 은 BOM 을 붙여 커밋 메시지 맨 앞에 보이지 않는 문자가 생김)
+    [IO.File]::WriteAllText($msgFile, (@("$version`: $first", '', $notesText, '', 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>') -join "`n"), (New-Object Text.UTF8Encoding($false)))
     git commit -q -F $msgFile
     Remove-Item $msgFile
 }
@@ -69,8 +70,11 @@ if ($LASTEXITCODE -ne 0) { throw "GitHub 에 올리지 못했습니다 (GitHub �
 
 # --- 5) 릴리스 ---
 $notesFile = New-TemporaryFile
-Set-Content $notesFile -Encoding UTF8 -Value $notesText
+[IO.File]::WriteAllText($notesFile, $notesText, (New-Object Text.UTF8Encoding($false)))
 & $gh release create $version --repo andomang/domang --title "domang.org $version" --notes-file $notesFile --target (git rev-parse HEAD)
 Remove-Item $notesFile
 if ($LASTEXITCODE -ne 0) { throw '릴리스를 만들지 못했습니다.' }
 Write-Host "[완료] 배포 · GitHub 업로드 · 릴리스 $version"
+
+# --- 6) 프로젝트별 저장소(pokemon_astera · drive · meta-search)에도 나눠 올리고 릴리스 ---
+& 'C:\2026\meta\rasp\sync-repos.ps1'

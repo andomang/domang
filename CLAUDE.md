@@ -28,3 +28,18 @@ Rules:
 
 문서·주석만 바꾼 경우는 버전을 올리지 않고 `ship.ps1 -NoDeploy` 도 하지 않는다 (다음 버전에 같이 올라감).
 
+## 프로젝트별 저장소 (항상 지킬 것)
+
+domang 은 전체를 담고, 아래 부분은 `rasp\ship.ps1` 마지막 단계(`rasp\sync-repos.ps1`)가 각 저장소에도 나눠 올리고 릴리스를 만든다.
+
+| 저장소 | 올라가는 파일 | 그 저장소의 변경 기록 |
+|---|---|---|
+| andomang/pokemon_astera | `pokemon/` (AI 인수인계 문서 제외) | `pokemon/CHANGELOG.md` |
+| andomang/drive | `DriveApi.cs`, `Services/DriveService.cs`, `Pages/Drive*.cshtml(.cs)` | `rasp/repos/drive/CHANGELOG.md` (README 도 같은 폴더) |
+| andomang/meta-search | `rasp/MetaSearch` 에서 드라이브 파일을 뺀 나머지 (`legacy/` 는 예전 WebForms 버전, 건드리지 않음) | `rasp/repos/meta-search/CHANGELOG.md` |
+
+- 코드를 바꾸면 domang `CHANGELOG.md` 와 함께, 바뀐 파일이 속한 저장소의 변경 기록 맨 위에도 새 버전을 적는다 (버전은 저장소마다 따로, 규칙은 같음).
+  그 저장소 변경 기록에 새 버전이 없으면 파일은 올라가지만 릴리스는 생기지 않는다.
+- 드라이브 기능은 `DriveApi.cs` 에 둔다 (Program.cs 에 다시 넣지 않음). 새 드라이브 파일을 만들면 `sync-repos.ps1` 의 `$driveFiles` 에도 추가한다.
+- 저장소 사본은 `C:\2026\repos\<이름>` 에 있다.
+
