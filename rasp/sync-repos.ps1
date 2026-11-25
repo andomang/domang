@@ -7,6 +7,7 @@
 #   실행: powershell -NoProfile -ExecutionPolicy Bypass -File C:\2026\meta\rasp\sync-repos.ps1
 # ============================================================
 $ErrorActionPreference = 'Stop'
+# git 출력(한글 경로)을 UTF-8 로 읽음 — core.quotepath=false 와 함께 써야 한글 파일명이 깨지지 않음
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $root = 'C:\2026\meta'; $work = 'C:\2026\repos'
 $gh = @("$env:ProgramFiles\GitHub CLI\gh.exe", "$env:LOCALAPPDATA\Programs\GitHub CLI\gh.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
@@ -29,18 +30,20 @@ foreach ($c in $comps) {
   $dir = Join-Path $work $c.repo
   Write-Host "== $($c.repo)"
   if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force $work | Out-Null; & $gh repo clone "andomang/$($c.repo)" $dir -- -q; if ($LASTEXITCODE -ne 0) { throw "$($c.repo) 저장소를 받지 못했습니다." } }
-  git -C $dir pull -q --rebase
+  # 사본은 매번 원본과 똑같이 맞추는 용도 → 지난번에 실패하고 남은 변경은 버림 (커밋된 것은 유지)
+  git -C $dir rev-parse -q --verify HEAD *> $null
+  if ($LASTEXITCODE -eq 0) { git -C $dir reset -q --hard HEAD; git -C $dir pull -q --rebase }
   # 올릴 파일 목록: 저장소 안 경로 → domang 안 경로
   $want = @{}
   Push-Location $root
-  foreach ($f in (git ls-files -- $c.src)) { if ($f -notmatch $c.exclude) { $want[$f.Substring($c.strip.Length)] = $f } }
-  if ($c.docs) { foreach ($f in (git ls-files -- $c.docs)) { $want[[IO.Path]::GetFileName($f)] = $f } }
+  foreach ($f in (git -c core.quotepath=false ls-files -- $c.src)) { if ($f -notmatch $c.exclude) { $want[$f.Substring($c.strip.Length)] = $f } }
+  if ($c.docs) { foreach ($f in (git -c core.quotepath=false ls-files -- $c.docs)) { $want[[IO.Path]::GetFileName($f)] = $f } }
   Pop-Location
   # 사본에서 이제 없는 파일 지움 (keep 폴더는 그대로)
-  foreach ($f in (git -C $dir ls-files)) {
+  foreach ($f in (git -C $dir -c core.quotepath=false ls-files)) {
     if ($want.ContainsKey($f)) { continue }
     if ($c.keep | Where-Object { $f.StartsWith($_) }) { continue }
-    Remove-Item -LiteralPath (Join-Path $dir $f) -Force
+    Remove-Item -LiteralPath (Join-Path $dir $f) -Force -ErrorAction SilentlyContinue
   }
   # 고른 파일 복사
   foreach ($k in $want.Keys) {
